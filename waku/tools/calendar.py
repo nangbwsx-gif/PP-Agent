@@ -328,8 +328,8 @@ def make_tool(
     return Tool(
         name="create_event",
         description=(
-            "Create a calendar event on the user's local calendar. Use whenever the user "
-            "wants to schedule, book, or plan something at a specific time."
+            "在用户的本地日历上创建一个日程。只要用户想在某个具体时间安排、预约或计划"
+            "一件事，就用它。"
         ),
         input_schema={
             "type": "object",
@@ -411,13 +411,12 @@ def make_list_tool(conn: sqlite3.Connection, home: Path | None = None) -> Tool:
     return Tool(
         name="list_events",
         description=(
-            "Read the user's calendar across every connected source (Google Calendar "
-            "when signed in, plus waku's own local calendar). "
-            "Use whenever the user asks what's on their calendar / schedule for a day, "
-            "week, yesterday, etc. Dates are ISO (e.g. 2026-07-10); omit both to list "
-            "everything upcoming. For 'yesterday'/'today' resolve the date from the "
-            "current time given in your system prompt. The result labels which "
-            "calendar each event came from — repeat that when it matters."
+            "读取用户日历里的日程，覆盖所有已连接的来源（登录后用 Google Calendar，"
+            "外加 Waku 自己的本地日历）。"
+            "只要用户问某天、某周、昨天有什么安排，就用它。日期用 ISO 格式"
+            "（如 2026-07-10）；start 和 end 都不填就列出所有即将到来的日程。"
+            "遇到「昨天」「今天」这类说法，用 system prompt 里给出的当前时间换算出日期。"
+            "结果会标明每条日程来自哪个日历 —— 需要的时候照实说出来。"
         ),
         input_schema={
             "type": "object",

@@ -83,9 +83,9 @@ def make_tool() -> Tool:
     return Tool(
         name="search_web",
         description=(
-            "Search the public web and get back the top results (title, snippet, URL). "
-            "Use when the user asks about current events, facts, schedules, or anything "
-            "you don't already know — then act on what you find (e.g. create calendar events)."
+            "搜索公开网页，返回最相关的几条结果（标题、摘要、网址）。"
+            "当用户问当前事件、事实、日程，或任何你不知道的事情时用它 —— 然后在查到的"
+            "内容基础上继续做事（比如据此创建日程）。"
         ),
         input_schema={
             "type": "object",

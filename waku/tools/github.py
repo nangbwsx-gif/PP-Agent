@@ -183,10 +183,10 @@ def make_tool(default_repo: str = "") -> Tool:
     return Tool(
         name="github_read",
         description=(
-            "Read pull requests and issues from GitHub via the gh CLI. "
-            "command must be one of: " + ", ".join(sorted(_ALLOWED)) + ". "
-            "READ-ONLY — it cannot merge, comment, close, edit or push, and will "
-            "refuse if asked to. Use it to review what is open and what changed."
+            "通过 gh CLI 读取 GitHub 上的 pull request 和 issue。"
+            "command 必须是以下之一：" + ", ".join(sorted(_ALLOWED)) + "。"
+            "READ-ONLY（只读）—— 不能 merge、comment、close、edit 或 push，"
+            "被这样要求时会直接拒绝。用来查看有哪些还开着、以及改了什么。"
         ),
         input_schema={
             "type": "object",

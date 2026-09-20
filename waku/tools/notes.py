@@ -24,9 +24,8 @@ def make_tool(conn: sqlite3.Connection) -> Tool:
     return Tool(
         name="save_note",
         description=(
-            "Save a durable fact to long-term memory. Use when the user tells you something "
-            "worth remembering about themselves, a person, or a project — especially if they "
-            "say 'remember' or share a preference."
+            "把一条值得长期记住的事实写进长期记忆。当用户说到关于他自己、某个人或某个"
+            "项目、值得记住的事时用它 —— 尤其当他说「记住」或提到某个偏好时。"
         ),
         input_schema={
             "type": "object",

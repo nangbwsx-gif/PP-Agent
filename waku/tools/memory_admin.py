@@ -61,9 +61,9 @@ def make_manage_memory_tool(memory) -> Tool:
     return Tool(
         name="manage_memory",
         description=(
-            "Search, correct, or delete the user's long-term memory (facts and episodes). "
-            "ALWAYS search first to get the id, then update or delete that id. "
-            "Use when the user says something you remember is wrong or should be forgotten."
+            "搜索、更正或删除用户的长期记忆（事实与情节）。"
+            "务必先搜索拿到 id，再用那个 id 去更新或删除。"
+            "当用户指出你记错了、或有东西该被忘掉时用它。"
         ),
         input_schema={
             "type": "object",
@@ -102,9 +102,8 @@ def make_update_soul_tool(settings) -> Tool:
     return Tool(
         name="update_soul",
         description=(
-            "Save a durable rule about how you should behave for this user (their "
-            "preferences and standing instructions). Appends to your persona; takes "
-            "effect next turn. Use when the user tells you how they want you to act."
+            "保存一条长期生效的行为规则（用户的偏好和长期要求）。会追加到你的 SOUL.md，"
+            "下一轮开始生效。当用户告诉你他希望你怎么做事时用它。"
         ),
         input_schema={
             "type": "object",
@@ -135,9 +134,9 @@ def make_create_skill_tool(settings, memory) -> Tool:
     return Tool(
         name="create_skill",
         description=(
-            "Write a new reusable skill (a SKILL.md the agent loads when relevant) so you "
-            "can repeat a workflow the user taught you. Only call this after the user agrees. "
-            "body = step-by-step instructions; description = when to use it (include trigger words)."
+            "写一个新的可复用技能（一份 SKILL.md，相关时才会被加载），这样用户教过你的"
+            "流程以后能重复执行。必须等用户同意之后再调用。"
+            "body = 一步步的操作说明；description = 什么时候用它（把触发词写进去）。"
         ),
         input_schema={
             "type": "object",

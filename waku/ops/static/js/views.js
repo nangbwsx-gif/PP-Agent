@@ -430,12 +430,7 @@ const VIEWS = {
   // the harness routes every message itself; this tab just tells the story.
   graph(d){
     const g = d.graph || {enabled:false, workflows:[], stats:{quick:0, full:0}};
-    let h = `<div class="meta" style="margin-bottom:var(--space-3)">The loop is one agent turn: the model picks tools until
-      it stops. Some work has <b>shape</b> — steps that can run at the same time, and explicit "if this, go
-      there" routing. A <b>graph workflow</b> makes that shape first-class: nodes (each does one job) connected
-      by edges (what happens next). The loop did not change one line — the <code>full_agent</code> node below
-      IS the same loop, running as one step. The harness routes every message itself — and workflows you
-      can also call BY NAME from the chat box: type <code>/graphs</code> to see them.</div>`;
+    let h = `<div class="meta" style="margin-bottom:var(--space-3)">${t("graph.intro","The loop is one agent turn: the model picks tools until it stops. Some work has <b>shape</b> — steps that can run at the same time, and explicit 'if this, go there' routing. A <b>graph workflow</b> makes that shape first-class: nodes (each does one job) connected by edges (what happens next). The loop did not change one line — the <code>full_agent</code> node below IS the same loop, running as one step. The harness routes every message itself — and workflows you can also call BY NAME from the chat box: type <code>/graphs</code> to see them.")}</div>`;
     if (!g.enabled)
       h += uiCard(`<b>${t("graph.offTitle","Off")}</b> — ${t("graph.offBody","every turn currently runs the classic loop.")}
         <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">Switch on <b>graph workflows</b> in

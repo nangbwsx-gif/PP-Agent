@@ -172,14 +172,14 @@ def _run_pi_json(cmd: list, workdir: Path, timeout: int, notify):
 # Still-skeleton boxes: name → what it will do, and its box on the whiteboard.
 PLANNED = [
     {"name": "run_command", "box": "Terminal tool",
-     "description": "Run a shell command in a sandbox and read the output — Hermes's 'Terminal' "
-                    "tool. Needs a real sandbox + safety surface first."},
+     "description": "在沙箱里执行 shell 命令并读取输出 —— Hermes 的「Terminal」工具。"
+                    "需要先有真正的沙箱和安全边界。"},
     {"name": "browse_web", "box": "Browser tool",
-     "description": "Open a page and read/click it — Hermes's 'Browser' tool. (search_web already "
-                    "covers read-only web lookups.)"},
+     "description": "打开网页并读取 / 点击 —— Hermes 的「Browser」工具。（只读的网页查询"
+                    "search_web 已经覆盖了。）"},
     {"name": "schedule_task", "box": "Cron Job",
-     "description": "Let the agent schedule its own recurring runs. Today `make brief` + a system "
-                    "cron line already does scheduled runs; this would move it in-app."},
+     "description": "让 Agent 自己安排周期性运行。现在用 `make brief` 加一条系统 cron "
+                    "已经能做到定时运行；这个只是把它搬进应用里。"},
 ]
 
 
@@ -295,11 +295,9 @@ def make_delegate_tool(settings: Settings) -> Tool:
 
     return Tool(
         name="delegate_task",
-        description=("Delegate a CODING task (fixing tests, multi-file edits, writing "
-                     "programs) to pi, a specialist coding agent running locally on this "
-                     "machine. Give it a self-contained task and, when the work targets an "
-                     "existing project, that project's absolute path as cwd. Use this for "
-                     "real programming work instead of describing code in chat."),
+        description=("把一个编程任务（修测试、跳文件改动、写程序）交给 pi —— 一个在本机"
+                     "运行的专业编程 Agent。任务要自包含；如果改动针对已有的项目，把该项目"
+                     "的绝对路径作为 cwd 传进去。真正的编程活用它，而不是在对话里描述代码。"),
         input_schema={
             "type": "object",
             "properties": {

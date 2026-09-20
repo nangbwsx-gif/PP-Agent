@@ -24,8 +24,8 @@ def make_tool(home: Path) -> Tool:
     return Tool(
         name="send_message",
         description=(
-            "Draft a message to someone and place it in the local outbox for the user to "
-            "review and send. Use when the user asks you to message, tell, or remind someone."
+            "起草一条发给某人的消息，放进本地发件箱，等用户过目后自己发送。"
+            "当用户让你给某人捎话、转告或提醒时用它。"
         ),
         input_schema={
             "type": "object",
