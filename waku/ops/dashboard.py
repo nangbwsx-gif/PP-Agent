@@ -1003,7 +1003,10 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/static/"):
             self._serve_static(self.path)
         else:
-            self._send(index_html(), "text/html; charset=utf-8")
+            # no_cache on purpose: this page carries the language injection, so a
+            # cached copy from before a restart keeps serving the wrong language.
+            # /static/* was already no-cache; the shell was the one that got away.
+            self._send(index_html(), "text/html; charset=utf-8", no_cache=True)
 
     def _serve_static(self, path: str) -> None:  # the frontend files
         name = path.split("/static/", 1)[1].split("?")[0]
