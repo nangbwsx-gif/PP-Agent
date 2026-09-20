@@ -30,13 +30,18 @@ import subprocess
 import pytest
 
 JS_DIR = pathlib.Path(__file__).resolve().parents[2] / "waku" / "ops" / "static" / "js"
-SCRIPTS = sorted(JS_DIR.glob("*.js"))
+STATIC_DIR = JS_DIR.parent
+# lang/ holds the translation tables, and they can take the whole page down just
+# as easily as any other script: a half-width quote inside a Chinese string
+# closed it early and the entire dashboard silently fell back to English, with
+# the only clue in the browser console. Hence two globs, not just js/.
+SCRIPTS = sorted(STATIC_DIR.glob("js/*.js")) + sorted(STATIC_DIR.glob("lang/*.js"))
 
 
 def test_there_are_scripts_to_check():
     """A guard whose glob silently matches nothing passes forever and protects
     nothing. If the frontend moves, this fails and says so."""
-    assert SCRIPTS, f"no .js found under {JS_DIR} — did the frontend move?"
+    assert SCRIPTS, f"no .js found under {STATIC_DIR} — did the frontend move?"
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")

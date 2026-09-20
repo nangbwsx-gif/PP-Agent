@@ -128,7 +128,7 @@ const ZH = {
   "mem.gateTitle": "检索 gate —— 这一轮到底需不需要记忆？",
   "mem.distilledTitle": "它蒸馏出的事实",
   "mem.introTitle": "记忆 vs 数据库 —— 同一个文件的两种视角。",
-  "mem.introBody": "这个页面按三根支柱整理 Waku 记得的东西。数据库页面显示完全相同的原始 SQLite 表（外加 FTS5 关键词索引）。同一个 .waku/state.db —— 只是看的"高度"不同。",
+  "mem.introBody": "这个页面按三根支柱整理 Waku 记得的东西。数据库页面显示完全相同的原始 SQLite 表（外加 FTS5 关键词索引）。同一个 .waku/state.db —— 只是看的「高度」不同。",
   "mem.introMd": "有些助手（比如 Hermes）把记忆存成单个 MEMORY.md 文件。Waku 把可查询的源头放在 state.db（事实 + 情节，可用 FTS5 搜），同时在每轮之后写一份人能读的 MEMORY.md 镜像 —— 两者都有：一个你能打开的文件，背后是结实的数据库。",
   "mem.pillar.semantic": "关于你和你的联系人，蒸馏出的持久事实",
   "mem.pillar.episodic": "每次蒸馏产生一条带日期的摘要 —— 故意保持很小",
