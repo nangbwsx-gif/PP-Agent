@@ -59,8 +59,15 @@ def test_connection_display_groups_stay_in_product_order():
     "Memory", not "Storage": the registry group is called "Memory & Storage" and
     the display map used to keep the wrong half. Notion is the episodic store,
     Supabase the semantic one, and every hosted memory service that joins them
-    is semantic too — none of it is generic storage."""
-    assert 'const CONNECTION_GROUPS = ["Channels", "Productivity", "Memory", "Tools"]' in JS_SRC
+    is semantic too — none of it is generic storage.
+
+    Since the Chinese interface landed, the group names go through t(), so this
+    asserts the ORDER rather than a literal — which is what the test was always
+    pinning: the reading order of the page."""
+    block = re.search(r"const CONNECTION_GROUPS = \[(.*?)\];", JS_SRC, re.DOTALL)
+    assert block, "CONNECTION_GROUPS disappeared from the frontend"
+    names = re.findall(r't\("conn\.group\.\w+",\s*"([^"]+)"\)', block.group(1))
+    assert names == ["Channels", "Productivity", "Memory", "Tools"], names
 
 
 def test_every_registry_group_has_a_display_name():

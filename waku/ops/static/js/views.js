@@ -19,13 +19,13 @@ function dbTable(t){
   const rows = t.sample.map(r => t.columns.map(c =>
     `<span class="dbcell">${esc(String(r[c]??"").slice(0,120))}</span>`));
   return `<div class="scrolly">${uiTable(cols, rows)}</div>
-    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">showing ${t.sample.length} of ${t.count} row${t.count===1?"":"s"} (newest first)</div>`;
+    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${t("db.showingRange","showing {n} of {total} rows (newest first)").replace("{n}",t.sample.length).replace("{total}",t.count)}</div>`;
 }
-const DB_DESC = {
-  calendar_events: "events the create_event tool wrote (the flagship task)",
-  facts: "semantic memory — durable facts (Memory ▸ Semantic)",
-  episodes: "episodic memory — dated summaries (Memory ▸ Episodic)",
-  chat_log: "every message, tagged by session_id — consolidation reads from here",
+const DB_DESC = {  // 每张表的说明，见 t() 的第二个参数
+  calendar_events: t("db.desc.calendar","events the create_event tool wrote (the flagship task)"),
+  facts: t("db.desc.facts","semantic memory — durable facts (Memory ▸ Semantic)"),
+  episodes: t("db.desc.episodes","episodic memory — dated summaries (Memory ▸ Episodic)"),
+  chat_log: t("db.desc.chatlog","every message, tagged by session_id — consolidation reads from here"),
 };
 const QUERY_EXAMPLES = [
   "SELECT role, content FROM chat_log ORDER BY id DESC LIMIT 10",
@@ -33,11 +33,9 @@ const QUERY_EXAMPLES = [
   "SELECT session_id, COUNT(*) FROM chat_log GROUP BY session_id",
 ];
 function dbQueryView(){
-  return `<div class="meta" style="margin-bottom:var(--space-2)">A read-only SQL console over <code>state.db</code>
-      (the Supabase-editor idea, scoped down). Only <code>SELECT</code> runs — the file is opened read-only,
-      so nothing here can change your data.</div>
+  return `<div class="meta" style="margin-bottom:var(--space-2)">${t("db.sqlIntro","A read-only SQL console over state.db. Only SELECT runs — the file is opened read-only, so nothing here can change your data.")}</div>
     <textarea class="sqlbox" id="sqlbox" spellcheck="false" onfocus="markEditing()" oninput="markEditing()">${esc(QUERY_EXAMPLES[0])}</textarea>
-    <div style="margin:var(--space-2) 0">${uiButton("Run", {level: "primary", onclick: "runQuery()"})}
+    <div style="margin:var(--space-2) 0">${uiButton(t("ui.run","Run"), {level: "primary", onclick: "runQuery()"})}
       <span class="meta" style="margin-left:var(--space-3)">try: ${QUERY_EXAMPLES.map(q=>`<span class="qexample" onclick="qFill(this.textContent)">${esc(q)}</span>`).join(" &nbsp; ")}</span></div>
     <div id="qout"></div>`;
 }
@@ -54,7 +52,7 @@ async function runQuery(){
   if (!r.rows.length){ out.innerHTML = uiCard(`<span class="empty">0 rows</span>`); return; }
   out.innerHTML = `<div class="scrolly">${uiTable(r.columns.map(esc),
     r.rows.map(row => row.map(v => `<span class="dbcell">${esc(String(v).slice(0,120))}</span>`)))}</div>
-    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${r.rows.length} row(s)</div>`;
+    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${t("db.rowCount","{n} row(s)").replace("{n}",r.rows.length)}</div>`;
 }
 
 // --- Memory sub-tabs. Memory is the friendly, per-pillar view of what persists;
@@ -62,59 +60,47 @@ async function runQuery(){
 function memOverview(d){
   const s = d.stats;
   const pillars = [
-    ["Semantic","semantic",d.facts.length+" facts","durable, distilled facts about you and your people"],
-    ["Episodic","episodic",d.episodes.length+" episodes","one dated summary per consolidation — stays small on purpose"],
-    ["Procedural","skills",d.skills.length+" skills","SKILL.md files loaded only when relevant — how to act"],
+    ["Semantic","semantic",d.facts.length+" facts",t("mem.pillar.semantic","durable, distilled facts about you and your people")],
+    ["Episodic","episodic",d.episodes.length+" episodes",t("mem.pillar.episodic","one dated summary per consolidation — stays small on purpose")],
+    ["Procedural","skills",d.skills.length+" skills",t("mem.pillar.procedural","SKILL.md files loaded only when relevant — how to act")],
   ].map(([t,sub,n,desc]) => uiCard(`<span>${desc}</span>`,
       {title: t, action: uiLink(n, `#memory/${sub}`), cls: "box"})).join("");
-  return uiNotice("note", `<b>Memory vs Database — two views of one file.</b>
-      <div class="r">This tab is the curated, per-pillar view of what Waku remembers. The
-      ${uiLink("Database tab", "#database")} shows the exact same
-      thing as raw SQLite tables (plus the FTS5 keyword index). Same
-      <code>.waku/state.db</code> — different altitude.
-      <br><br>Some assistants (Hermes) keep memory as a single <code>MEMORY.md</code> file. Waku keeps
-      the queryable source in <code>state.db</code> (facts + episodes, FTS5-searchable) <b>and</b> writes a
-      human-readable ${reveal("MEMORY.md","MEMORY.md")} mirror after every turn — so you get both: a real file
-      you can open, backed by a sturdy database.</div>`) + `
-    <h2>The three pillars</h2>
+  return uiNotice("note", `<b>${t("mem.introTitle","Memory vs Database — two views of one file.")}</b>
+      <div class="r">${t("mem.introBody","This tab is the curated, per-pillar view of what Waku remembers. The Database tab shows the exact same thing as raw SQLite tables (plus the FTS5 keyword index). Same .waku/state.db — different altitude.")}
+      <br><br>${t("mem.introMd","Some assistants (Hermes) keep memory as a single MEMORY.md file. Waku keeps the queryable source in state.db (facts + episodes, FTS5-searchable) and writes a human-readable MEMORY.md mirror after every turn — so you get both: a real file you can open, backed by a sturdy database.")}</div>`) + `
+    <h2>${t("mem.pillars","The three pillars")}</h2>
     <div class="tiles" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${pillars}</div>
-    <h2>Retrieval gate — does this turn even need memory?</h2>${gateSplit(s)}
+    <h2>${t("mem.gateTitle","Retrieval gate — does this turn even need memory?")}</h2>${gateSplit(s)}
     <div class="meta" style="margin-top:var(--space-2)">A cheap model decides <b>if</b> a turn needs memory at all, before any lookup —
       this is memory <i>retrieval</i>, the hero decision. (The Ops tab charts the same skip/retrieve
       numbers as an operational metric; the decision itself is memory's.)</div>
     <div class="meta" style="margin-top:var(--space-3)">Files: ${reveal("state.db","state.db")} · ${reveal("MEMORY.md","MEMORY.md")} · ${reveal("SOUL.md","SOUL.md")} · ${reveal("skills","skills/")}</div>`;
 }
 function memSemantic(d){
-  let h = `<div class="meta" style="margin-bottom:var(--space-3)">Durable facts distilled from what you tell Waku —
-    the smallest, most-reused store. Edit or forget any of them; changes are live next turn.</div>`;
+  let h = `<div class="meta" style="margin-bottom:var(--space-3)">${t("mem.semanticIntro","Durable facts distilled from what you tell Waku — the smallest, most-reused store. Edit or forget any of them; changes are live next turn.")}</div>`;
   // editFact (memory.js) finds the row #fact-N, swaps its .fc for a textarea
   // and its last cell for save/cancel, so the row carries the id.
-  h += uiTable(["subject", "fact", "source", ""], d.facts.map(f => ({id: `fact-${f.id}`, cells: [
+  h += uiTable([t("tbl.subject","subject"), t("tbl.fact","fact"), t("tbl.source","source")], d.facts.map(f => ({id: `fact-${f.id}`, cells: [
     `<code>${esc(f.subject)}</code>`,
     `<span class="fc">${esc(f.content)}</span>`,
     `<span class="meta">${esc(f.source)}</span>`,
-    `<span style="white-space:nowrap">${uiButton("edit", {level: "tertiary", size: "sm", onclick: `editFact(${f.id})`})} · ${uiButton("delete", {level: "tertiary", size: "sm", danger: true, onclick: `delMem('delete_fact',${f.id})`})}</span>`,
-  ]})), {empty: "no facts yet"});
+    `<span style="white-space:nowrap">${uiButton(t("ui.edit","edit"), {level: "tertiary", size: "sm", onclick: `editFact(${f.id})`})} · ${uiButton(t("ui.delete","delete"), {level: "tertiary", size: "sm", danger: true, onclick: `delMem('delete_fact',${f.id})`})}</span>`,
+  ]})), {empty: t("ui.empty.noFacts","no facts yet")});
   return h;
 }
 function memEpisodic(d){
   const src = d.episodes_source || "sqlite";
   let h = `<div class="meta" style="margin-bottom:var(--space-2)">backend: ${uiBadge(esc(src), "value")}</div>`;
   if (d.episodes_error) h += uiCard(`<span class="empty">Could not read episodes from Notion: ${esc(d.episodes_error)}</span>`);
-  h += uiNotice("note", `<b>Why is this small?</b> <span class="r">Episodic memory holds one <i>distilled</i> summary per
-    consolidation, not every message. The raw, blow-by-blow conversation lives in the
-    ${uiLink("<code>chat_log</code> table", "#database/chat_log")}
-    (the big one) on the Database tab — episodes are its highlights.</span>`);
-  h += uiTable(["date","episode",""], d.episodes.map(e => [
+  h += uiNotice("note", `<b>${t("mem.epiWhyTitle","Why is this small?")}</b> <span class="r">${t("mem.epiWhyBody","Episodic memory holds one distilled summary per consolidation, not every message. The raw, blow-by-blow conversation lives in the chat_log table (the big one) on the Database tab — episodes are its highlights.")}</span>`);
+  h += uiTable([t("tbl.date","date"), t("tbl.episode","episode"), ""], d.episodes.map(e => [
     `<span class="meta">${esc(e.happened_at)}</span>`, esc(e.summary),
-    uiButton("delete", {level: "tertiary", size: "sm", danger: true, onclick: `delMem('delete_episode','${e.id}')`}),
-  ]), {empty: "no episodes yet"});
+    uiButton(t("ui.delete","delete"), {level: "tertiary", size: "sm", danger: true, onclick: `delMem('delete_episode','${e.id}')`}),
+  ]), {empty: t("ui.empty.noEpisodes","no episodes yet")});
   return h;
 }
 function memSkills(d){
-  let h = `<div class="meta" style="margin-bottom:var(--space-3)">Procedural memory — markdown instructions loaded
-    only when a message matches. Add your own three ways: teach Waku in chat (it calls
-    <code>create_skill</code>), edit a skill below, or drop a <code>SKILL.md</code> into ${reveal("skills","the skills folder")}.</div>`;
+  let h = `<div class="meta" style="margin-bottom:var(--space-3)">${t("mem.skillsIntro","Procedural memory — markdown instructions loaded only when a message matches. Add your own three ways: teach Waku in chat (it calls create_skill), edit a skill below, or drop a SKILL.md into the skills folder.")}</div>`;
   h += d.skills.map((sk,i) => {
     const full = `---
 name: ${sk.name}
@@ -127,49 +113,47 @@ ${sk.body}`;
         <span style="margin-left:calc(var(--spacing) * 1.5)">${uiBadge(sk.editable?"home":"built-in")}</span></div>
       <textarea class="editor" id="sk-${i}" style="min-height:150px;margin-top:var(--space-2)" data-path="${esc(sk.path)}"
         oninput="dirty('sksave-${i}')" onfocus="markEditing()">${esc(full)}</textarea>
-      <div style="margin-top:var(--space-2)">${uiButton("Save SKILL.md", {level: "primary", onclick: `saveSkill(${i})`, attrs: `id="sksave-${i}" disabled`})}
+      <div style="margin-top:var(--space-2)">${uiButton(t("ui.saveSkill","Save SKILL.md"), {level: "primary", onclick: `saveSkill(${i})`, attrs: `id="sksave-${i}" disabled`})}
         <span class="meta" id="skmsg-${i}" style="margin-left:var(--space-2)">${esc(sk.rel)}</span></div>`);
   }).join("") || uiCard(`<span class="empty">no skills loaded</span>`);
   return h;
 }
 function memSoul(d){
-  return `<div class="meta" style="margin-bottom:var(--space-3)">SOUL.md is Waku's persona — the system prompt it
-    loads every turn. Editing it changes who your Waku is. Changes are live next turn.</div>
+  return `<div class="meta" style="margin-bottom:var(--space-3)">${t("mem.soulIntro","SOUL.md is Waku's persona — the system prompt it loads every turn. Editing it changes who your Waku is. Changes are live next turn.")}</div>
     ${uiCard(`<textarea id="soul" class="editor" style="min-height:260px"
       oninput="dirty('soul-save')" onfocus="markEditing()">${esc(d.soul||"")}</textarea>
-    <div style="margin-top:var(--space-2)">${uiButton("Save SOUL.md", {level: "primary", onclick: "saveSoul()", attrs: 'id="soul-save" disabled'})}
+    <div style="margin-top:var(--space-2)">${uiButton(t("ui.saveSoul","Save SOUL.md"), {level: "primary", onclick: "saveSoul()", attrs: 'id="soul-save" disabled'})}
       <span class="meta" id="soul-msg" style="margin-left:var(--space-2)"></span></div>`)}
     <div class="meta" style="margin-top:var(--space-2)">${reveal("SOUL.md","open SOUL.md in your editor")}</div>`;
 }
 function memConsolidation(d){
   const distilled = d.facts.filter(f => f.source==="consolidation");
-  let h = uiCard(`<b>How it works.</b> <span class="r prose">Every ${d.consolidate_every} exchanges,
-    a cheap model reads the unconsolidated ${"<code>chat_log</code>"} and distills it into durable
-    <b>facts</b> (semantic) plus one <b>episode</b> (episodic). Batching keeps it cheap and gives the
-    summarizer enough context to pick what's worth keeping.</span>`);
+  let h = uiCard(`<b>${t("mem.consTitle","How it works.")}</b> <span class="r prose">${
+    t("mem.consBody","Every {n} exchanges, a cheap model reads the unconsolidated chat_log and distills it into durable facts (semantic) plus one episode (episodic). Batching keeps it cheap and gives the summarizer enough context to pick what's worth keeping.")
+      .replace("{n}", d.consolidate_every)}</span>`);
   h += `<div style="margin-top:var(--space-3)">${uiStatBand([
-    {label:"messages queued", value:d.chat_pending},
-    {label:"trigger threshold", value:d.consolidate_every*2},
-    {label:"facts from consolidation", value:distilled.length},
-    {label:"episodes total", value:d.episodes.length},
+    {label:t("stat.queued","messages queued"), value:d.chat_pending},
+    {label:t("stat.threshold","trigger threshold"), value:d.consolidate_every*2},
+    {label:t("stat.distilled","facts from consolidation"), value:distilled.length},
+    {label:t("stat.episodes","episodes total"), value:d.episodes.length},
   ])}</div>`;
-  h += `<h2>Facts it distilled</h2>`;
-  h += table(["subject","fact","when"], distilled.map(f =>
+  h += `<h2>${t("mem.distilledTitle","Facts it distilled")}</h2>`;
+  h += table([t("tbl.subject","subject"), t("tbl.fact","fact"), t("tbl.when","when")], distilled.map(f =>
     `<tr><td><code>${esc(f.subject)}</code></td><td>${esc(f.content)}</td><td class="meta">${esc((f.created_at||"").slice(0,10))}</td></tr>`));
   h += `<div class="meta" style="margin-top:var(--space-2)">This is a memory operation, shown here. Each run is also
-    ${uiLink("traced", "#ops")} (Ops) and can be scored by the judge evals.</div>`;
+    ${uiLink(t("ui.traced","traced"), "#ops")} (Ops) and can be scored by the judge evals.</div>`;
   return h;
 }
 
 // Tools ▸ Results: the artifacts tool calls produced (kept distinct from the
 // tools themselves — the old tab conflated capability with output).
 function toolsResults(d){
-  let h = `<div class="meta" style="margin-bottom:var(--space-2)">What tool calls actually wrote. These are results, not the tools.</div>`;
-  h += `<h2>Calendar events <span class="meta" style="font-weight:400">· from create_event</span></h2>`;
-  h += table(["event","start","end","with"], d.calendar.map(e =>
+  let h = `<div class="meta" style="margin-bottom:var(--space-2)">${t("tools.resultsIntro","What tool calls actually wrote. These are results, not the tools.")}</div>`;
+  h += `<h2>${t("tools.calendarTitle","Calendar events")} <span class="meta" style="font-weight:400">· ${t("tools.fromCreateEvent","from create_event")}</span></h2>`;
+  h += table([t("tbl.event","event"), t("tbl.start","start"), t("tbl.end","end"), t("tbl.with","with")], d.calendar.map(e =>
     `<tr><td>${esc(e.title)}</td><td class="meta">${esc(e.start)}</td><td class="meta">${esc(e.end)}</td><td>${esc(e.attendees)}</td></tr>`));
   h += `<div class="meta" style="margin-bottom:var(--space-4)">also written to <code>calendar.ics</code> — ${reveal("calendar.ics","reveal calendar.ics in Finder")} (double-click to import into Calendar.app)</div>`;
-  h += `<h2>Outbox — drafted messages <span style="font-weight:400;text-transform:none;letter-spacing:0">· ${reveal("outbox","open the outbox folder")}</span></h2>`;
+  h += `<h2>${t("tools.outboxTitle","Outbox — drafted messages")} <span style="font-weight:400;text-transform:none;letter-spacing:0">· ${reveal("outbox","open the outbox folder")}</span></h2>`;
   h += d.outbox.length ? d.outbox.map(o => uiCard(`<span class="u">${esc(o.name)}</span><div class="r">${esc(o.text)}</div>`)).join("")
                        : uiCard(`<span class="empty">no drafted messages</span>`);
   return h;
@@ -178,20 +162,20 @@ function toolsResults(d){
 // anyone can plug in their own server (scalable, not a one-off).
 function toolsMCP(t){
   const m = t.mcp;
-  let h = uiNotice(m.live ? "ok" : "note", `<b>Model Context Protocol${m.live?" — connected":m.configured?" — configured":" — not set up"}.</b>
+  let h = uiNotice(m.live ? "ok" : "note", `<b>Model Context Protocol${m.live?t("mcp.connected"," — connected"):m.configured?t("mcp.configured"," — configured"):t("mcp.notSetUp"," — not set up")}.</b>
     <div class="r">MCP lets Waku borrow tools from any external server (files, GitHub, a database, …),
     namespaced <code>&lt;server&gt;_&lt;tool&gt;</code>. ${m.configured
       ? `Configured servers: ${m.servers.map(s=>`<code>${esc(s)}</code>`).join(" ")}${m.live?"":" — start a chat to connect them."}`
-      : "None configured yet."}</div>`);
-  h += `<h2>Connect one (30 seconds)</h2>` + uiCard(`
-    <div class="meta">1 — install the extra: <code>pip install -e '.[mcp]'</code></div>
-    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">2 — create ${reveal("","the .waku folder")}<code>/mcp.json</code>:</div>
+      : t("ui.empty.noneConfigured","None configured yet.")}</div>`);
+  h += `<h2>${t("mcp.connectTitle","Connect one (30 seconds)")}</h2>` + uiCard(`
+    <div class="meta">${t("mcp.step1","1 — install the extra:")} <code>pip install -e '.[mcp]'</code></div>
+    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${t("mcp.step2","2 — create")} ${reveal("",t("mcp.theHome","the .waku folder"))}<code>/mcp.json</code>:</div>
     <pre style="font-family:var(--face-mono);font-size:var(--text-xs);color:var(--text-muted);white-space:pre-wrap;margin-top:var(--space-2)">{"servers": [
   {"name": "fs", "command": "npx",
    "args": ["-y", "@modelcontextprotocol/server-filesystem", "${esc(D&&D.home||"")}"]}
 ]}</pre>
-    <div class="meta" style="margin-top:var(--space-2)">3 — restart the dashboard. The server's tools appear above under
-      ${uiLink("Available ▸ MCP servers", "#tools/available")}, callable in chat.</div>`);
+    <div class="meta" style="margin-top:var(--space-2)">${t("mcp.step3","3 — restart the dashboard. The server's tools appear above under")}
+      ${uiLink(t("ui.mcpServers","Available ▸ MCP servers"), "#tools/available")}, callable in chat.</div>`);
   h += `<div class="meta" style="margin-top:var(--space-3)">The same pattern scales: any MCP server (yours or a vendor's)
     plugs in the same way — no code changes to Waku. Skills work the same way — drop a <code>SKILL.md</code>
     in ${reveal("skills","skills/")}.</div>`;
@@ -211,10 +195,10 @@ function connectionField(key, field, prefix="connection"){
   const configured = field.secret && field.configured
     ? ` ${uiBadge("set ····"+esc(field.last4), "ok")}` : "";
   const clear = field.secret && field.configured
-    ? `<label class="conn-clear"><input type="checkbox" data-clear="${esc(field.name)}"> Clear saved value</label>` : "";
+    ? `<label class="conn-clear"><input type="checkbox" data-clear="${esc(field.name)}"> ${t("conn.clearSaved","Clear saved value")}</label>` : "";
   return `<div class="conn-field"><label class="fld" for="${id}"><span>${label}${configured}</span>
     <input id="${id}" data-field="${esc(field.name)}" type="${field.secret?"password":"text"}"
-      value="${field.secret?"":esc(field.value)}" placeholder="${field.secret?(field.configured?"Blank keeps the saved value":"Not configured"):""}">
+      value="${field.secret?"":esc(field.value)}" placeholder="${field.secret?(field.configured?t("conn.blankKeeps","Blank keeps the saved value"):t("conn.notConfigured","Not configured")):""}">
     </label>${clear}${help}</div>`;
 }
 async function saveConnection(key, force){
@@ -223,12 +207,12 @@ async function saveConnection(key, force){
   modal.querySelectorAll("[data-field]").forEach(el => values[el.dataset.field] = el.type === "checkbox" ? (el.checked ? "1" : "") : el.value);
   modal.querySelectorAll("[data-clear]").forEach(el => { if (el.checked) clear.push(el.dataset.clear); });
   const msg = document.getElementById(`connection-msg-${key}`);
-  msg.textContent = force ? "saving without a successful test…" : "saving…";
+  msg.textContent = force ? t("ui.savingUnverified","saving without a successful test…") : t("ui.saving","saving…");
   const r = await postJSON("/api/connections", {key, values, clear, force:!!force});
   if (!r.ok && r.can_force) {
-    msg.innerHTML = `${esc(r.error)} ${uiButton("Save anyway", {level: "secondary", cls: "conn-force", onclick: `saveConnection('${esc(key)}',true)`})}`;
+    msg.innerHTML = `${esc(r.error)} ${uiButton(t("ui.saveAnyway","Save anyway"), {level: "secondary", cls: "conn-force", onclick: `saveConnection('${esc(key)}',true)`})}`;
   } else if (!r.ok) {
-    msg.textContent = r.error || "failed";
+    msg.textContent = r.error || t("ui.failed","failed");
   } else {
     closeConnectionModal();
     await refresh();
@@ -236,10 +220,10 @@ async function saveConnection(key, force){
 }
 async function testConnection(key){
   const msg = document.getElementById(`connection-msg-${key}`);
-  if (msg) msg.textContent = "testing…";
+  if (msg) msg.textContent = t("ui.testing","testing…");
   const r = await postJSON("/api/connections/test", {key});
   if (!r.status) {
-    if (msg) msg.textContent = r.error || "failed";
+    if (msg) msg.textContent = r.error || t("ui.failed","failed");
     return;
   }
   const display = connectionStatusDisplay(r.status);
@@ -275,7 +259,7 @@ async function saveProvider(provider){
 }
 function stProvider(){ return (D.settings || {}).provider || "anthropic"; }
 
-const CONNECTION_GROUPS = ["Channels", "Productivity", "Memory", "Tools"];
+const CONNECTION_GROUPS = [t("conn.group.channels","Channels"), t("conn.group.productivity","Productivity"), t("conn.group.memory","Memory"), t("conn.group.tools","Tools")];
 // "Memory", not "Storage". The registry already calls this group "Memory &
 // Storage"; the display map was dropping the half that says what these
 // actually are. Notion is the episodic store, Supabase the semantic one, and
@@ -295,28 +279,28 @@ function connectionDisplayGroup(item){
 
 function connectionStatusDisplay(status){
   const state = (status && status.state) || "not_configured";
-  if (state === "connected") return {label:"connected", className:"connected"};
-  if (state === "error") return {label:"error", className:"error"};
+  if (state === t("conn.state.connected","connected")) return {label:t("conn.state.connected","connected"), className:t("conn.state.connected","connected")};
+  if (state === t("conn.state.error","error")) return {label:t("conn.state.error","error"), className:t("conn.state.error","error")};
   // "configured" means every required field is filled and the extra is
   // installed — it just hasn't been probed. That is not a warning, so it must
-  // not wear the amber "needs setup" pill: this state covers most of a working
+  // not wear the amber t("conn.state.needsSetup","needs setup") pill: this state covers most of a working
   // setup on first visit, and colouring it like a problem told every new user
   // their Notion and Tavily needed fixing when they were fine.
-  if (state === "configured") return {label:"configured · not tested", className:"configured"};
-  if (state === "installed_but_unconfigured") return {label:"needs setup", className:"needs-setup"};
-  return {label:"not configured", className:"not-configured"};
+  if (state === "configured") return {label:t("conn.state.configured","configured · not tested"), className:"configured"};
+  if (state === "installed_but_unconfigured") return {label:t("conn.state.needsSetup","needs setup"), className:"needs-setup"};
+  return {label:t("conn.state.notConfigured","not configured"), className:"not-configured"};
 }
 
 function connectionCard(item){
   const display = connectionStatusDisplay(item.status);
   const action = item.status && item.status.state !== "not_configured" ? "Edit" : "Configure";
-  // Say WHY on the card. "needs setup" covers two unrelated fixes — a missing
+  // Say WHY on the card. t("conn.state.needsSetup","needs setup") covers two unrelated fixes — a missing
   // value ("missing NOTION_TOKEN") and a missing package ("missing notion
   // extra", which wants a pip install, not a key) — and the reason used to be
   // hidden until you opened the modal. The message repeats the label for
   // connected/configured, so only show it where it adds something.
   const why = (item.status && item.status.message
-    && (item.status.state === "installed_but_unconfigured" || item.status.state === "error"))
+    && (item.status.state === "installed_but_unconfigured" || item.status.state === t("conn.state.error","error")))
     ? `<div class="connwhy">${esc(item.status.message)}</div>` : "";
   return uiCard(`
     <img class="provlogo connlogo" src="/static/logos/connections/${esc(item.key)}.svg" alt="">
@@ -348,7 +332,7 @@ function openConnectionModal(key){
   const fields = item.fields.map(field => connectionField(item.key, field)).join("");
   const setup = (item.install_command || item.setup_url) ? uiNotice("note", `
         ${item.install_command?`<code>${esc(item.install_command)}</code>`:""}
-        ${item.setup_url?`<a href="${esc(item.setup_url)}" target="_blank" rel="noopener noreferrer">Setup guide ↗</a>`:""}`) : "";
+        ${item.setup_url?`<a href="${esc(item.setup_url)}" target="_blank" rel="noopener noreferrer">${t("conn.setupGuide","Setup guide ↗")}</a>`:""}`) : "";
   const d = openDialog(`<div data-connection="${esc(item.key)}">
       <header class="connmodal-head">
         <img class="provlogo connlogo" src="/static/logos/connections/${esc(item.key)}.svg" alt="">
@@ -356,7 +340,7 @@ function openConnectionModal(key){
           <h3 id="connection-modal-title">${esc(item.name)}</h3>
           <div class="connstatus ${display.className}" id="connection-modal-status"><span class="conndot"></span>${esc(display.label)}</div>
         </div>
-        ${uiButton("Close", {level: "tertiary", size: "sm", cls: "connmodal-close", onclick: "closeConnectionModal()", attrs: 'aria-label="Close"'})}
+        ${uiButton(t("ui.close","Close"), {level: "tertiary", size: "sm", cls: "connmodal-close", onclick: "closeConnectionModal()", attrs: 'aria-label="Close"'})}
       </header>
       <p class="conndesc connmodal-desc">${esc(item.what)}</p>
       <div class="connmodal-meta">
@@ -367,8 +351,8 @@ function openConnectionModal(key){
       <div class="connection-fields">${fields}</div>
       <div class="dialog-foot">
         <span class="connmodal-message" id="connection-msg-${esc(item.key)}" aria-live="polite"></span>
-        ${uiButton("Save", {level: "primary", onclick: `saveConnection('${esc(item.key)}')`})}
-        ${uiButton("Test connection", {level: "secondary", onclick: `testConnection('${esc(item.key)}')`})}
+        ${uiButton(t("ui.save","Save"), {level: "primary", onclick: `saveConnection('${esc(item.key)}')`})}
+        ${uiButton(t("ui.testConnection","Test connection"), {level: "secondary", onclick: `testConnection('${esc(item.key)}')`})}
       </div>
     </div>`, {label: item.name, onClose: () => {
       editing = false;
@@ -395,7 +379,7 @@ const VIEWS = {
   },
   connections(d){
     const items = d.connections || [];
-    return items.length ? connectionsGrid(items) : uiCard(`<span class="empty">No integrations registered.</span>`);
+    return items.length ? connectionsGrid(items) : uiCard(`<span class="empty">${t("conn.empty","No integrations registered.")}</span>`);
   },
   // Gateway: ONE unified conversation across every channel (dashboard, voice,
   // cli) — the same loop + memory answer all of them. Each message is
@@ -405,9 +389,7 @@ const VIEWS = {
   // dock (the active thread). No longer a flat stream that duplicates the dock.
   gateway(d){
     const sessions = d.sessions || [];
-    let h = `<div class="meta" style="margin-bottom:var(--space-3)">Every conversation across every channel —
-      web, voice, terminal — answered by the same brain. Click one to open it in the
-      chat dock &rarr;. This is the inbox; the dock is the open thread.</div>`;
+    let h = `<div class="meta" style="margin-bottom:var(--space-3)">${t("gw.intro","Every conversation across every channel — web, voice, terminal — answered by the same brain. Click one to open it in the chat dock. This is the inbox; the dock is the open thread.")}</div>`;
     if (!sessions.length)
       return h + uiCard(`<span class="empty">no conversations yet — say something in the chat dock &rarr;</span>`);
     h += sessions.map(s => uiRow(gwTags(s),
@@ -420,17 +402,17 @@ const VIEWS = {
     const s = d.stats;
     const u = d.usage || {total_cost:0};
     return `${uiStatBand([
-        {label:"spent", value:money(u.total_cost), sub:"all-time", tone:"ok"},
-        {label:"avg turn", value:secs(s.latency_avg)},
-        {label:"turns", value:s.turns}, {label:"tool calls", value:s.tool_calls},
-        {label:"facts", value:d.facts.length}, {label:"events", value:d.calendar.length},
+        {label:t("stat.spent","spent"), value:money(u.total_cost), sub:t("stat.allTime","all-time"), tone:"ok"},
+        {label:t("stat.avgTurn","avg turn"), value:secs(s.latency_avg)},
+        {label:t("stat.turns","turns"), value:s.turns}, {label:t("stat.toolCalls","tool calls"), value:s.tool_calls},
+        {label:t("stat.facts","facts"), value:d.facts.length}, {label:t("stat.events","events"), value:d.calendar.length},
       ])}
-    <h2>Retrieval gate — the hero decision</h2>${gateSplit(s)}
-    <h2 style="margin-top:var(--space-6)">Architecture — click any box <span class="arch-status"></span></h2>
+    <h2>${t("ov.gateTitle","Retrieval gate — the hero decision")}</h2>${gateSplit(s)}
+    <h2 style="margin-top:var(--space-6)">${t("ov.archTitle","Architecture — click any box")} <span class="arch-status"></span></h2>
     ${archSVG(d)}
-    <h2>Graph workflows — when a turn needs shape</h2>
+    <h2>${t("set.graphTitle","Graph workflows")}${t("ov.graphSub"," — when a turn needs shape")}</h2>
     ${graphPanel(d)}
-    <h2>Latest turn</h2>${d.turns.length?turnCard(d.turns[0]):uiCard('<span class="empty">no turns yet — talk to Waku first</span>')}`;
+    <h2>${t("ov.latestTurn","Latest turn")}</h2>${d.turns.length?turnCard(d.turns[0]):uiCard('<span class="empty">no turns yet — talk to Waku first</span>')}`;
   },
   loop(d){
     return d.turns.length ? d.turns.map(turnCard).join("") : uiCard(`<span class="empty">no turns yet</span>`);
@@ -448,22 +430,17 @@ const VIEWS = {
       IS the same loop, running as one step. The harness routes every message itself — and workflows you
       can also call BY NAME from the chat box: type <code>/graphs</code> to see them.</div>`;
     if (!g.enabled)
-      h += uiCard(`<b>Off</b> — every turn currently runs the classic loop.
+      h += uiCard(`<b>${t("graph.offTitle","Off")}</b> — ${t("graph.offBody","every turn currently runs the classic loop.")}
         <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">Switch on <b>graph workflows</b> in
-        ${uiLink("Behaviour", "#settings")}, or set
+        ${uiLink(t("ui.behaviourTab","Behaviour"), "#settings")}, or set
         <code>WAKU_GRAPH_WORKFLOWS=1</code> in <code>.env</code>. Any failure anywhere fails open to the
         plain loop — this can never lose a reply, only save time and tokens.</div>`);
     // The two workflows are two different JOBS with different triggers, which is
     // the thing the page has to make obvious — otherwise two stacked charts read
     // like two options you pick between.
     const NOTE = {
-      triage: `<b>Runs itself, on every message.</b> Gated by the graph-workflows flag.
-        Solid arrows = always, dashed = the router's choice. <code>full_agent</code> is the
-        ordinary loop running as one node — a graph does not replace the loop, it arranges calls to it.`,
-      gather: `<b>Runs when you start it</b> — <code>make gather</code> or the button below — and
-        ignores the flag entirely. The four scans have no dependencies on each other, so the engine
-        runs them in ONE WAVE: together, not in turn. It proposes and never acts; the digest lands
-        in the outbox for you to read.`,
+      triage: `<b>${t("graph.note.triageTitle","Runs itself, on every message.")}</b> ${t("graph.note.triageBody","Gated by the graph-workflows flag. Solid arrows = always, dashed = the router's choice. full_agent is the ordinary loop running as one node — a graph does not replace the loop, it arranges calls to it.")}`,
+      gather: `<b>${t("graph.note.gatherTitle","Runs when you start it")}</b> ${t("graph.note.gatherBody","— make gather or the button below — and ignores the flag entirely. The four scans have no dependencies on each other, so the engine runs them in ONE WAVE: together, not in turn. It proposes and never acts; the digest lands in the outbox for you to read.")}`,
     };
     (g.workflows || []).forEach(w => {
       if (!w) return;
@@ -477,7 +454,7 @@ const VIEWS = {
       if (w.name === "gather") h += graphRunPanel();
     });
     const gturns = (d.turns||[]).filter(t => t.graph && t.graph.route);
-    h += `<h2>Graph turns</h2>`;
+    h += `<h2>${t("graph.turnsTitle","Graph turns")}</h2>`;
     h += gturns.length
       ? gturns.slice(0,20).map(t => uiCard(`
           <div class="u">${esc(t.user_message)}</div>
@@ -491,9 +468,9 @@ const VIEWS = {
   },
   memory(d, sub){
     sub = sub || "overview";
-    const tabs = [["overview","Overview"],["semantic","Semantic",d.facts.length],
-      ["episodic","Episodic",d.episodes.length],["skills","Skills",d.skills.length],
-      ["soul","SOUL"],["consolidation","Consolidation",d.chat_pending]];
+    const tabs = [["overview",t("tab.overview","Overview")],["semantic",t("tab.semantic","Semantic"),d.facts.length],
+      ["episodic",t("tab.episodic","Episodic"),d.episodes.length],["skills",t("tab.skills","Skills"),d.skills.length],
+      ["soul",t("tab.soul","SOUL")],["consolidation",t("tab.consolidation","Consolidation"),d.chat_pending]];
     let h = subtabBar("memory", tabs, sub);
     if (sub==="semantic") return h + memSemantic(d);
     if (sub==="episodic") return h + memEpisodic(d);
@@ -504,44 +481,42 @@ const VIEWS = {
   },
   settings(d){
     const st = d.settings || {providers:[]};
-    return `<h2>Experimental tools</h2>${uiCard(`
-      <div class="meta" style="margin-bottom:var(--space-2)">Opt in to local coding delegation for chat.</div>
-      <label class="fld">Sub-agent delegation<select id="set-experimental" onfocus="markEditing()">
-        <option value="" ${!st.experimental?"selected":""}>off</option>
-        <option value="1" ${st.experimental?"selected":""}>on</option>
+    return `<h2>${t("set.experimental","Experimental tools")}</h2>${uiCard(`
+      <div class="meta" style="margin-bottom:var(--space-2)">${t("set.experimentalIntro","Opt in to local coding delegation for chat.")}</div>
+      <label class="fld">${t("set.subAgent","Sub-agent delegation")}<select id="set-experimental" onfocus="markEditing()">
+        <option value="" ${!st.experimental?"selected":""}>${t("ui.off","off")}</option>
+        <option value="1" ${st.experimental?"selected":""}>${t("ui.on","on")}</option>
       </select></label>
-      ${uiButton("Save", {level: "primary", onclick: "saveSettings()"})}<span class="meta" id="set-msg"></span>`)}
-    <h2>Graph workflows</h2>${uiCard(`
+      ${uiButton(t("ui.save","Save"), {level: "primary", onclick: "saveSettings()"})}<span class="meta" id="set-msg"></span>`)}
+    <h2>${t("set.graphTitle","Graph workflows")}</h2>${uiCard(`
       <div class="meta" style="margin-bottom:var(--space-2)">Off by default. When on, <b>every</b> message is triaged
         through a graph first: a small model classifies it while today's calendar loads in parallel — trivial
         messages get a fast small-model reply, real tasks run the exact same loop as a node. This flag governs
         the AUTOMATIC door only — workflows you call by name (<code>/gather</code>) run either way. Any
         failure fails open to the plain loop. Watch it live on the
-        ${uiLink("Graph", "#graph")} tab.</div>
-      <label class="fld">Triage-first turns
+        ${uiLink(t("ui.graphTab","Graph"), "#graph")} tab.</div>
+      <label class="fld">${t("set.triageFirst","Triage-first turns")}
         <select id="set-graph-workflows" onfocus="markEditing()">
-          <option value="" ${!st.graph_workflows?"selected":""}>off — every turn runs the classic loop (default)</option>
-          <option value="1" ${st.graph_workflows?"selected":""}>on — triage graph routes each message</option>
+          <option value="" ${!st.graph_workflows?"selected":""}>${t("set.graphOff","off — every turn runs the classic loop (default)")}</option>
+          <option value="1" ${st.graph_workflows?"selected":""}>${t("set.graphOn","on — triage graph routes each message")}</option>
         </select></label>
-      <div style="margin-top:var(--space-3)">${uiButton("Save &amp; switch", {level: "primary", onclick: "saveSettings()"})}
-        <span class="meta" style="margin-left:var(--space-2)">rebuilds the agent in-process — no restart</span></div>
+      <div style="margin-top:var(--space-3)">${uiButton(t("ui.saveSwitch","Save &amp; switch"), {level: "primary", onclick: "saveSettings()"})}
+        <span class="meta" style="margin-left:var(--space-2)">${t("set.rebuilds","rebuilds the agent in-process — no restart")}</span></div>
     `)}`;
   },
   tools(d, sub){
     const t = d.tools || {catalog:[], mcp:{configured:false,servers:[],live:false}};
     sub = sub || "available";
-    const tabs = [["available","Available",t.catalog.length],["results","Results"],
-      ["mcp","MCP",t.mcp.servers.length||null]];
+    const tabs = [["available",t("tab.available","Available"),t.catalog.length],["results",t("tab.results","Results")],
+      ["mcp",t("tab.mcp","MCP"),t.mcp.servers.length||null]];
     let h = subtabBar("tools", tabs, sub);
     if (sub === "results") return h + toolsResults(d);
     if (sub === "mcp") return h + toolsMCP(t);
     // Available: what the agent CAN do (grouped by origin), not just what it did.
-    h += `<div class="meta" style="margin-bottom:var(--space-3)">The capabilities the agent can call this turn.
-      A tool is a name + description the model reads, a JSON schema, and a Python function — that's it.
-      Connect more via ${uiLink("MCP", "#tools/mcp")}.</div>`;
-    const SRC = [["flagship","Flagship task — scheduling"],["web","Web search"],
-      ["self-management","Self-management — it edits its own memory"],
-      ["mcp","MCP servers"],["other","Other"]];
+    h += `<div class="meta" style="margin-bottom:var(--space-3)">${t("tools.availableIntro","The capabilities the agent can call this turn. A tool is a name + description the model reads, a JSON schema, and a Python function — that's it. Connect more via MCP.")}</div>`;
+    const SRC = [["flagship",t("tool.src.flagship","Flagship task — scheduling")],["web",t("tool.src.web","Web search")],
+      ["self-management",t("tool.src.self","Self-management — it edits its own memory")],
+      ["mcp",t("tool.src.mcp","MCP servers")],["other",t("tool.src.other","Other")]];
     SRC.forEach(([key,label]) => {
       const items = t.catalog.filter(c => c.source === key);
       if (!items.length) return;
@@ -552,7 +527,7 @@ const VIEWS = {
     });
     // Roadmap: whiteboard boxes not wired in yet — set expectations, don't over-promise.
     if ((t.planned||[]).length){
-      h += `<h2>Coming soon <span class="meta" style="font-weight:400">· on the architecture chart, not wired in yet (opt in with <code>WAKU_EXPERIMENTAL=1</code>)</span></h2>`;
+      h += `<h2>${t("tools.comingSoon","Coming soon ")}<span class="meta" style="font-weight:400">· ${t("tools.comingSoonSub","on the architecture chart, not wired in yet (opt in with WAKU_EXPERIMENTAL=1)")}</span></h2>`;
       h += t.planned.map(p => uiCard(`
         <div class="tn"><code>${esc(p.name)}</code> ${uiBadge(`soon · ${esc(p.box)}`)}</div>
         <div class="td">${esc(p.description)}</div>`, {cls: "toolcard toolcard-soon", size: "sm"})).join("");
@@ -566,9 +541,9 @@ const VIEWS = {
     const db = d.db || {tables:[], all_tables:[], fts:[], size:0, path:""};
     const tables = db.tables || [];
     sub = sub || "overview";
-    const tabs = [["overview","Overview"],
+    const tabs = [["overview",t("tab.overview","Overview")],
       ...tables.map(t => [t.name, t.name, t.count]),
-      ["query","SQL console"]];
+      ["query",t("tab.sql","SQL console")]];
     let h = subtabBar("database", tabs, sub);
     if (sub === "query") return h + dbQueryView();
     if (sub !== "overview"){
@@ -576,13 +551,13 @@ const VIEWS = {
       if (!t) return h + uiCard(`<span class="empty">no such table</span>`);
       const notionNote = (t.name === "episodes" && d.episodes_source === "notion")
         ? `<div class="meta" style="margin-bottom:var(--space-2)">Episodes currently live in Notion — see
-            ${uiLink("Memory ▸ Episodic", "#memory/episodic")}.
+            ${uiLink(t("ui.memoryEpisodic","Memory ▸ Episodic"), "#memory/episodic")}.
             The rows below are the old local copy in state.db.</div>` : "";
       return h + notionNote + `<div class="meta" style="margin-bottom:var(--space-2)">${DB_DESC[t.name]||""}</div>` + dbTable(t);
     }
     const kb = (db.size/1024).toFixed(1);
     h += uiNotice("note", `<b>Database vs Memory.</b> <span class="r">This is the raw persistence layer — the literal SQLite
-      tables. The ${uiLink("Memory tab", "#memory")} is the friendly
+      tables. The ${uiLink(t("ui.memoryTab","Memory tab"), "#memory")} is the friendly
       view of the same rows (facts, episodes, skills, persona). One file, two altitudes. Where Hermes
       uses a <code>MEMORY.md</code> file, Waku uses these queryable tables — and mirrors them to a
       readable <code>MEMORY.md</code> too.</span>`);
@@ -590,11 +565,11 @@ const VIEWS = {
       <div class="u" style="font-family:var(--face-mono);font-size:var(--text-xs);word-break:break-all">${esc(db.path)}</div>
       <div class="meta">${kb} KB on disk · SQLite + FTS5 · open it yourself: <code>sqlite3 .waku/state.db</code></div>
       <div class="meta" style="margin-top:var(--space-2)">${reveal("state.db","reveal state.db in Finder")} &nbsp;·&nbsp; ${reveal("","open the .waku folder")}</div>`);
-    h += `<h2>Tables — click a tab above, or a row here</h2>`;
-    h += table(["table","rows","what it holds"], tables.map(t =>
+    h += `<h2>${t("db.tablesTitle","Tables — click a tab above, or a row here")}</h2>`;
+    h += table([t("tbl.table","table"), t("tbl.rows","rows"), t("tbl.whatitholds","what it holds")], tables.map(t =>
       `<tr><td>${uiLink(`<code>${esc(t.name)}</code>`, `#database/${esc(t.name)}`)}</td>
         <td class="meta">${t.count}</td><td class="meta">${DB_DESC[t.name]||""}</td></tr>`));
-    h += `<h2>FTS5 — the keyword index</h2>` + uiCard(`The <code>*_fts</code> virtual tables (and their
+    h += `<h2>${t("db.ftsTitle","FTS5 — the keyword index")}</h2>` + uiCard(`The <code>*_fts</code> virtual tables (and their
       <code>*_fts_data</code>/<code>*_fts_idx</code> shadows) make memory searchable by keyword — no embeddings,
       no vector DB. This is the "keyword top-k" the retrieval gate queries.
       <div class="meta" style="margin-top:var(--space-2)">all ${db.all_tables.length} tables: ${db.all_tables.map(t=>`<code>${esc(t)}</code>`).join(" ")}</div>`);
@@ -604,45 +579,45 @@ const VIEWS = {
     const s = d.stats;
     const u = d.usage || {calls:0,total_in:0,total_out:0,total_cost:0,by_day:[],by_provider:[]};
     let h = uiStatBand([
-        {label:"spent", value:money(u.total_cost), sub:"all-time", tone:"ok"},
-        {label:"tokens in", value:u.total_in.toLocaleString(), sub:"all-time"},
-        {label:"tokens out", value:u.total_out.toLocaleString(), sub:"all-time"},
-        {label:"LLM calls", value:u.calls.toLocaleString()},
-        {label:"avg turn", value:secs(s.latency_avg)}, {label:"tool errors", value:`${s.tool_errors}`},
+        {label:t("stat.spent","spent"), value:money(u.total_cost), sub:t("stat.allTime","all-time"), tone:"ok"},
+        {label:t("stat.tokensIn","tokens in"), value:u.total_in.toLocaleString(), sub:"all-time"},
+        {label:t("stat.tokensOut","tokens out"), value:u.total_out.toLocaleString(), sub:t("stat.allTime","all-time")},
+        {label:t("stat.llmCalls","LLM calls"), value:u.calls.toLocaleString()},
+        {label:t("stat.avgTurn","avg turn"), value:secs(s.latency_avg)}, {label:t("stat.toolErrors","tool errors"), value:`${s.tool_errors}`},
       ]);
     // Eval verdicts are "pass" / "fail" / anything else (skipped, not run).
     const verdict = v => v === "pass" ? "ok" : v === "fail" ? "bad" : "neutral";
 
-    h += `<h2>Spend <span class="meta" style="font-weight:400">· permanent ledger — survives a demo reset</span></h2>`;
+    h += `<h2>${t("ops.spendTitle","Spend")} <span class="meta" style="font-weight:400">· ${t("ops.spendSub","permanent ledger — survives a demo reset")}</span></h2>`;
     h += uiCard(`<span class="r prose">Every LLM call's tokens are logged to
       <code>.waku/usage.jsonl</code> (append-only, never wiped). Dollar cost is estimated from tokens
       × current pricing — the tokens are the ground truth.</span>`,
       {footer: reveal("usage.jsonl","open usage.jsonl")});
     if ((u.by_provider||[]).length){
-      h += table(["provider","LLM calls","tokens in","tokens out","cost (est)"], u.by_provider.map(p =>
+      h += table([t("tbl.provider","provider"), t("tbl.LLMcalls","LLM calls"), t("tbl.tokensin","tokens in"), t("tbl.tokensout","tokens out"), t("tbl.cost(est)","cost (est)")], u.by_provider.map(p =>
         `<tr><td><code>${esc(p.provider)}</code></td><td class="meta">${p.calls}</td>
           <td class="meta">${p.in.toLocaleString()}</td><td class="meta">${p.out.toLocaleString()}</td>
           <td class="meta">${money(p.cost)}</td></tr>`));
     }
     if ((u.by_day||[]).length){
-      h += `<h2>Spend per day</h2>`;
-      h += table(["day","LLM calls","tokens in","tokens out","cost (est)"], u.by_day.map(r =>
+      h += `<h2>${t("ops.spendPerDay","Spend per day")}</h2>`;
+      h += table([t("tbl.day","day"), t("tbl.LLMcalls","LLM calls"), t("tbl.tokensin","tokens in"), t("tbl.tokensout","tokens out"), t("tbl.cost(est)","cost (est)")], u.by_day.map(r =>
         `<tr><td class="meta">${esc(r.date)}</td><td class="meta">${r.calls}</td>
           <td class="meta">${r.in.toLocaleString()}</td><td class="meta">${r.out.toLocaleString()}</td>
           <td class="meta">${money(r.cost)}</td></tr>`));
     }
 
-    h += `<h2>Retrieval gate — which turns used memory</h2>${gateSplit(s)}`;
+    h += `<h2>${t("ops.gateWhich","Retrieval gate — which turns used memory")}</h2>${gateSplit(s)}`;
     const decided = d.turns.filter(t => t.gate);
     if (decided.length){
-      h += `<div class="meta" style="margin:var(--space-2) 0">The actual decisions (what was skipped vs retrieved), most recent first:</div>`;
-      h += table(["turn","decision","why"], decided.slice(0,10).map(t =>
+      h += `<div class="meta" style="margin:var(--space-2) 0">${t("ops.gateDecisions","The actual decisions (what was skipped vs retrieved), most recent first:")}</div>`;
+      h += table([t("tbl.turn","turn"), t("tbl.decision","decision"), t("tbl.why","why")], decided.slice(0,10).map(t =>
         `<tr><td>${esc((t.user_message||"").slice(0,44))}</td>
           <td>${uiBadge(esc(t.gate.decision), t.gate.decision==="skip" ? "neutral" : "ok")}</td>
           <td class="meta">${esc(t.gate.reason||"")}</td></tr>`));
     }
 
-    h += `<h2>Release gate <span class="meta" style="font-weight:400">· the ship/no-ship check</span></h2>`;
+    h += `<h2>${t("ops.gateTitle","Release gate")} <span class="meta" style="font-weight:400">· ${t("ops.gateSub","the ship/no-ship check")}</span></h2>`;
     h += uiCard(`<span class="r prose">Before you ship a change (new prompt, swapped model, tuned
       retrieval), <code>make gate</code> runs both eval suites: deterministic must pass 100%, the judge must
       clear its threshold. It's manual — you run it — so there's one record per run. The history below grows
@@ -655,20 +630,20 @@ const VIEWS = {
 
     if ((d.eval_history||[]).length){
       const cnt = s => s ? `${s.passed||0} pass · ${s.failed||0} fail` : "—";
-      h += `<h2>Eval history</h2>`;
-      h += table(["when","deterministic","llm-judge","counts"], d.eval_history.map(r =>
+      h += `<h2>${t("ops.evalHistory","Eval history")}</h2>`;
+      h += table([t("tbl.when","when"), t("tbl.deterministic","deterministic"), t("tbl.llmjudge","llm-judge"), t("tbl.counts","counts")], d.eval_history.map(r =>
         `<tr><td class="meta">${esc((r.ran_at||"").replace("T"," ").slice(0,19))}</td>
          <td>${uiBadge(esc(r.deterministic), verdict(r.deterministic))}</td>
          <td>${uiBadge(esc(r.judge), verdict(r.judge))}</td>
          <td class="meta">det ${cnt(r.suites&&r.suites.deterministic)} · judge ${cnt(r.suites&&r.suites.judge)}</td></tr>`));
     }
 
-    h += `<h2>Slowest turns</h2>`;
+    h += `<h2>${t("ops.slowest","Slowest turns")}</h2>`;
     const slow = [...d.turns].filter(t=>t.latency_ms!=null).sort((a,b)=>b.latency_ms-a.latency_ms).slice(0,6);
-    h += table(["turn","latency","cost","tools"], slow.map(t =>
+    h += table([t("tbl.turn","turn"), t("tbl.latency","latency"), t("tbl.cost","cost"), t("tbl.tools","tools")], slow.map(t =>
       `<tr><td>${esc((t.user_message||"").slice(0,48))}</td><td class="meta">${secs(t.latency_ms)}</td><td class="meta">${money(t.cost||0)}</td><td class="meta">${(t.tools||[]).map(x=>x.tool).join(", ")||"—"}</td></tr>`));
 
-    h += `<h2>Tracing <span class="meta" style="font-weight:400">· every turn as JSONL, always on</span></h2>`;
+    h += `<h2>${t("ops.traceTitle","Tracing")} <span class="meta" style="font-weight:400">· ${t("ops.traceSub","every turn as JSONL, always on")}</span></h2>`;
     if ((d.trace_errors||[]).length){
       h += d.trace_errors.map(e => uiCard(`${uiBadge("trace encoding error", "bad")}
         <div class="meta" style="margin-top:var(--space-2)"><code>${esc(e.file)}</code> — ${esc(e.error)}</div>`)).join("");
@@ -677,15 +652,15 @@ const VIEWS = {
       d.trace_file?` (newest: <code>${esc(d.trace_file)}</code>)`:""}.
       A trace is just "what happened, in order" — here are the most recent lines:</span>`,
       {footer: reveal("traces","open the traces folder")});
-    h += (d.trace_tail||[]).length ? table(["event","detail","when"], d.trace_tail.map(e =>
+    h += (d.trace_tail||[]).length ? table([t("tbl.event","event"), t("tbl.detail","detail"), t("tbl.when","when")], d.trace_tail.map(e =>
         `<tr><td><code>${esc(e.type)}</code></td><td class="meta">${esc(String(e.detail).slice(0,60))}</td>
           <td class="meta">${esc((e.ts||"").replace("T"," ").slice(0,19))}</td></tr>`))
       : uiCard(`<span class="empty">no trace lines yet — talk to Waku</span>`);
-    h += `<div class="meta" style="margin-top:var(--space-2)">Span waterfalls: <code>make trace</code> + <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317</code>.</div>`;
+    h += `<div class="meta" style="margin-top:var(--space-2)">${t("ops.spanWaterfalls","Span waterfalls:")} <code>make trace</code> + <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317</code>.</div>`;
 
     if (d.wake_scans.length){
-      h += `<h2>Voice — wake near-misses</h2>`;
-      h += table(["heard","when"], d.wake_scans.map(w =>
+      h += `<h2>${t("ops.wakeTitle","Voice — wake near-misses")}</h2>`;
+      h += table([t("tbl.heard","heard"), t("tbl.when","when")], d.wake_scans.map(w =>
         `<tr><td>${esc(w.heard)}</td><td class="meta">${esc((w.ts||"").replace("T"," ").slice(0,19))}</td></tr>`));
     }
     return h;
