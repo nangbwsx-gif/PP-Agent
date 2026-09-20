@@ -1,6 +1,6 @@
 """The agent's tools. Flagship-task tools (calendar/notes/messages), memory
 self-management (manage_memory/update_soul/create_skill), and opt-in adapters:
-Apple ecosystem (WAKU_APPLE_TOOLS=1) and MCP servers (.waku/mcp.json)."""
+read-only GitHub (WAKU_GH_TOOL=1) and MCP servers (.waku/mcp.json)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ def build_registry(conn: sqlite3.Connection, settings: Settings, memory=None) ->
         calendar.make_tool(
             conn,
             settings.home,
-            apple_calendar=settings.apple_calendar,
             google_calendar=settings.google_calendar,
             google_calendar_id=settings.google_calendar_id,
         )
@@ -52,13 +51,6 @@ def build_registry(conn: sqlite3.Connection, settings: Settings, memory=None) ->
         from waku.tools import experimental
 
         for t in experimental.make_tools(settings):
-            registry.register(t)
-
-    # Apple ecosystem readers/writers (opt-in; first use triggers macOS prompts).
-    if settings.apple_tools:
-        from waku.tools import apple
-
-        for t in apple.make_tools():
             registry.register(t)
 
     # Read-only GitHub via the gh CLI (opt-in; uses gh's own auth, no token here).

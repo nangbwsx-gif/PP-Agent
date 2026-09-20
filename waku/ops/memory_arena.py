@@ -470,8 +470,8 @@ def run_arena(backends: list[str], track: str, emit, fixture: dict | None = None
             opts = {"provider": prov, "model": mod} if prov and mod else {}
             # Partition env is set once around the whole race, below.
             app = Waku(settings=Settings(home=home, semantic_store=store,
-                                         apple_calendar=False, google_calendar=False,
-                                         apple_tools=False, graph_workflows=False, **opts))
+                                         google_calendar=False,
+                                         graph_workflows=False, **opts))
             # Seeding is 53% of a race and perfectly deterministic, so a home
             # that already holds this exact seed is not re-told. Racing is now
             # the cheap half: seed once, ask many times.

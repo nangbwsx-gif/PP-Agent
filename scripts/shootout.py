@@ -68,7 +68,7 @@ def run_one(provider: str, model: str, cases: list[dict], trials: int = 1) -> di
         for _ in range(trials):
             home = Path(tempfile.mkdtemp(prefix=f"shootout-{provider}-"))
             settings = Settings(provider=provider, model=model, small_model="",
-                                home=home, apple_calendar=False)
+                                home=home)
             app = Waku(settings=settings)
             resolved_model = settings.model   # get_client filled the default
             if "setup_fact" in case:

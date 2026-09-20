@@ -3,9 +3,6 @@ deterministic eval: it either wrote the right row or it didn't.
 
 Where events land:
   always      state.db (the eval asserts here) + calendar.ics (importable file)
-  opt-in      Apple Calendar, in a dedicated "Waku" calendar, via AppleScript —
-              set WAKU_APPLE_CALENDAR=1. First use makes macOS ask permission
-              for your terminal to control Calendar; approve once.
   opt-in      Google Calendar via WAKU_GOOGLE_CALENDAR=1. Local files remain
               authoritative if credentials, the network, or Google fail.
 
@@ -17,17 +14,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import subprocess
-import sys
 from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
-from waku.tools.apple import ensure_running
 from waku.tools.registry import Tool
 
-APPLE_CALENDAR_NAME = "Waku"
-APPLE_CALENDAR_PROBE_TIMEOUT = 15
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 GOOGLE_CALENDAR_TIMEOUT = 30
 
@@ -53,135 +45,6 @@ def _write_ics(home: Path, title: str, start: str, end: str, attendees: str) -> 
     else:
         body = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//waku-agent//EN\n"
     ics_path.write_text(body + event + "END:VCALENDAR\n", encoding="utf-8")
-
-
-def _applescript_date(var: str, iso: str) -> str:
-    """Build an AppleScript date from ISO parts — immune to system locale
-    (never feed AppleScript a formatted date string; parsing is locale-bound)."""
-    d = datetime.fromisoformat(iso)
-    # set day to 1 BEFORE month/year: prevents the classic AppleScript overflow
-    # (if today is the 31st, setting month to a 30-day month rolls into next month)
-    return (
-        f"set {var} to current date\nset day of {var} to 1\n"
-        f"set year of {var} to {d.year}\nset month of {var} to {d.month}\n"
-        f"set day of {var} to {d.day}\nset hours of {var} to {d.hour}\n"
-        f"set minutes of {var} to {d.minute}\nset seconds of {var} to 0\n"
-    )
-
-
-def probe_apple_calendar() -> None:
-    """Verify Calendar.app automation access and find one writable calendar.
-
-    This is deliberately read-only: Connections can test the integration
-    without leaving a synthetic event or calendar behind.
-    """
-    if sys.platform != "darwin":
-        raise RuntimeError("Apple Calendar probe is macOS-only.")
-    ensure_running("Calendar")
-    script = '''
-tell application "Calendar"
-  repeat with cal in calendars
-    try
-      if writable of cal then return name of cal
-    end try
-  end repeat
-end tell
-return ""'''
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=APPLE_CALENDAR_PROBE_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"Apple Calendar probe timed out after {APPLE_CALENDAR_PROBE_TIMEOUT}s; "
-            "Calendar.app may be slow or waiting for Automation permission."
-        ) from None
-    except OSError as exc:
-        raise RuntimeError(f"Apple Calendar probe could not run osascript ({exc}).") from None
-    if result.returncode != 0:
-        detail = (result.stderr or "failed").strip()[:200]
-        raise RuntimeError(f"Apple Calendar probe failed: {detail}")
-    if not (result.stdout or "").strip():
-        raise RuntimeError("Apple Calendar has no writable calendars.")
-
-
-def _record_apple_calendar_health(ok: bool, message: str) -> None:
-    """Publish real runtime outcomes without making calendar sync depend on UI."""
-    try:
-        from waku.integrations import IntegrationState, IntegrationStatus, record_health
-
-        state = IntegrationState.CONNECTED if ok else IntegrationState.ERROR
-        record_health("apple_calendar", IntegrationStatus(state, message))
-    except Exception:
-        # A health-cache write must never change whether the user's event lands.
-        pass
-
-
-def sync_to_apple_calendar(title: str, start: str, end: str, notes: str = "") -> str:
-    """Create the event in Calendar.app under the 'Waku' calendar (created on
-    first use). Returns a short human-readable outcome for the tool output."""
-    if sys.platform != "darwin":
-        return "Apple Calendar sync skipped (not macOS)."
-    safe_title = title.replace("\\", "").replace('"', "'")
-    safe_notes = notes.replace("\\", "").replace('"', "'")
-    # Prefer a dedicated "Waku" calendar, but macOS can't create calendars in
-    # iCloud-only accounts via AppleScript — fall back to the first writable
-    # calendar and report which one was actually used.
-    ensure_running("Calendar")
-    script = (
-        _applescript_date("startDate", start)
-        + _applescript_date("endDate", end)
-        + f'''
-tell application "Calendar"
-  if not (exists calendar "{APPLE_CALENDAR_NAME}") then
-    try
-      make new calendar with properties {{name:"{APPLE_CALENDAR_NAME}"}}
-      delay 1
-    end try
-  end if
-  if exists calendar "{APPLE_CALENDAR_NAME}" then
-    set targetCal to calendar "{APPLE_CALENDAR_NAME}"
-  else
-    set targetCal to first calendar whose writable is true
-  end if
-  tell targetCal
-    make new event with properties {{summary:"{safe_title}", start date:startDate, end date:endDate, description:"{safe_notes}"}}
-  end tell
-  return name of targetCal
-end tell'''
-    )
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script], capture_output=True, text=True, timeout=30, check=False
-        )
-    except subprocess.TimeoutExpired:
-        message = (
-            "Apple Calendar sync timed out — this usually means macOS is showing a "
-            "permission dialog ('would like to add to your Calendar'). The event is safe "
-            "in the local calendar; approve the dialog and ask me to create it again."
-        )
-        _record_apple_calendar_health(False, message)
-        return message
-    except OSError as exc:
-        message = f"Apple Calendar sync FAILED ({exc}) — the event is still in the local calendar."
-        _record_apple_calendar_health(False, message)
-        return message
-    if result.returncode != 0:
-        detail = (result.stderr or "").strip()[:120]
-        message = (
-            f"Apple Calendar sync FAILED ({detail}) — the event is still in the local "
-            "calendar. If this is a permissions error, allow your terminal to control "
-            "Calendar in System Settings > Privacy & Security > Automation."
-        )
-        _record_apple_calendar_health(False, message)
-        return message
-    used = (result.stdout or "").strip() or APPLE_CALENDAR_NAME
-    _record_apple_calendar_health(True, f"Last write succeeded (calendar '{used}').")
-    return f"Also added to Apple Calendar (calendar '{used}')."
 
 
 def _google_event_body(
@@ -403,7 +266,6 @@ def sync_to_google_calendar(
 def make_tool(
     conn: sqlite3.Connection,
     home: Path,
-    apple_calendar: bool = False,
     google_calendar: bool = False,
     google_calendar_id: str = "primary",
 ) -> Tool:
@@ -442,8 +304,6 @@ def make_tool(
         _write_ics(home, title, start, end, attendees)
 
         where = f"Saved to the local calendar ({home / 'calendar.ics'})."
-        if apple_calendar:
-            where += " " + sync_to_apple_calendar(title, start, end, notes)
         if google_calendar:
             where += " " + sync_to_google_calendar(
                 title,
@@ -454,10 +314,9 @@ def make_tool(
                 calendar_id=google_calendar_id,
                 home=home,
             )
-        if not apple_calendar and not google_calendar:
+        if not google_calendar:
             where += (
-                " Not synced to any calendar app (enable with WAKU_APPLE_CALENDAR=1 "
-                "or WAKU_GOOGLE_CALENDAR=1, "
+                " Not synced to any calendar app (enable with WAKU_GOOGLE_CALENDAR=1, "
                 f"or import manually: open {home / 'calendar.ics'})."
             )
         return (
@@ -500,11 +359,6 @@ def make_list_tool(conn: sqlite3.Connection, home: Path | None = None) -> Tool:
     schedule; the local SQLite calendar second, because it only ever holds what
     waku itself created. Every source is LABELLED in the output, so the agent can
     say where an answer came from instead of implying it saw everything.
-
-    Apple Calendar is deliberately not read here: going through AppleScript to
-    reach Google-synced calendars measured ~51 seconds on a real Mac (472 events,
-    two `whose` queries). It stays available as its own opt-in tool for genuinely
-    local calendars. Google's API answers the same question in ~0.4s.
     """
     def local_events(start: str = "", end: str = "", limit: int = 20) -> str:
         query = 'SELECT title, start, "end", attendees FROM calendar_events'

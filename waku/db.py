@@ -1,7 +1,8 @@
-"""One SQLite file (state.db) holds everything Waku remembers and does.
+"""
+一个 SQLite 文件（state.db）保存了 Waku 记住和做的一切。
 
-This mirrors the Hermes approach on the whiteboard: SQLite + FTS5, no server.
-Open it yourself anytime:  sqlite3 .waku/state.db '.tables'
+这反映了白板上 Hermes 的做法：SQLite + FTS5，无需服务器。
+你可以随时自己打开它：sqlite3 .waku/state.db '.tables'
 """
 
 from __future__ import annotations
@@ -10,24 +11,25 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA = """
--- Flagship-task artifact: events the calendar tool creates. The deterministic
--- eval asserts directly on rows in this table ("did the meeting trigger?").
+-- 旗舰任务产物：日历工具创建的事件。确定性评估直接断言此表中的行
+-- （“会议是否触发了？”）。
+
 CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
     start TEXT NOT NULL,           -- ISO 8601
     "end" TEXT,
-    attendees TEXT DEFAULT '',     -- comma-separated
+    attendees TEXT DEFAULT '',     -- 逗号分隔
     notes TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now'))
 );
 
--- Semantic memory: durable facts about you, your people, your projects.
+-- 语义记忆：关于你、你的人和你的项目的持久事实。
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY,
-    subject TEXT NOT NULL,         -- who/what the fact is about, e.g. 'alex'
-    content TEXT NOT NULL,         -- the fact itself
-    source TEXT DEFAULT 'user',    -- 'user' (told directly) or 'consolidation'
+    subject TEXT NOT NULL,         -- 事实关于谁/什么，例如 'alex'
+    content TEXT NOT NULL,         -- 事实本身
+    source TEXT DEFAULT 'user',    -- 'user'（直接告知）或 'consolidation'（整合）
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
@@ -44,10 +46,10 @@ CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
     INSERT INTO facts_fts(rowid, subject, content) VALUES (new.id, new.subject, new.content);
 END;
 
--- Episodic memory: dated things that happened (past chats, distilled).
+-- 情景记忆：带日期的已发生事件（过去的聊天，经过提炼）。
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY,
-    happened_at TEXT NOT NULL,     -- ISO 8601 date of the episode
+    happened_at TEXT NOT NULL,     -- 情景发生的 ISO 8601 日期
     summary TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -61,10 +63,10 @@ CREATE TRIGGER IF NOT EXISTS episodes_ad AFTER DELETE ON episodes BEGIN
     INSERT INTO episodes_fts(episodes_fts, rowid, summary) VALUES ('delete', old.id, old.summary);
 END;
 
--- Raw chat log ("save the messages" box). Consolidation reads from here.
--- session_id tags each row with which conversation it belongs to, so the
--- dashboard can offer "New chat" and switch between past sessions (like a
--- chat app). Everything shares this one table — sessions are just a label.
+-- 原始聊天记录（“保存消息”框）。整合过程从这里读取。
+-- session_id 为每一行标记它属于哪个对话，这样仪表板可以
+-- 提供“新聊天”并在过去的会话之间切换（像聊天应用一样）。
+-- 所有内容共享这一个表——会话只是一个标签。
 CREATE TABLE IF NOT EXISTS chat_log (
     id INTEGER PRIMARY KEY,
     role TEXT NOT NULL,            -- 'user' | 'assistant'
@@ -96,12 +98,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
 
 def connect(home: Path, check_same_thread: bool = True) -> sqlite3.Connection:
-    # check_same_thread=False lets the dashboard's threaded HTTP server reuse
-    # one agent connection across worker threads (guarded by a lock). busy_timeout
-    # avoids "database is locked" when the dashboard reads while a chat writes.
-    conn = sqlite3.connect(home / "state.db", check_same_thread=check_same_thread)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=3000")
-    conn.executescript(SCHEMA)
-    _migrate(conn)
-    return conn
+    # 连接并初始化”项目的 SQLite 数据库
+    conn = sqlite3.connect(home / "state.db", check_same_thread=check_same_thread)  # 打开/创建数据库文件
+    conn.row_factory = sqlite3.Row                                                  # 设置连接行为
+    conn.execute("PRAGMA busy_timeout=3000")                                        # 设置连接行为
+    conn.executescript(SCHEMA)                                                      # 建表
+    _migrate(conn)                                                                  # 迁移旧数据库
+    return conn                                                                     # 返回连接对象

@@ -61,8 +61,7 @@ def make_waku(home: Path, client=None, **settings_overrides):
     # in the maintainer's .env — and a test that reads the developer's machine
     # is not deterministic. Each entry below is a switch that changes what a
     # turn DOES, pinned off unless a test asks for it:
-    #   apple/google_calendar  reach the real calendar (network + a Mac)
-    #   apple_tools            register four more tools and shell out to macOS
+    #   google_calendar        reaches the real calendar (network + a credential)
     #   graph_workflows        route every message through the triage graph,
     #                          which spends one extra model call — on 2026-07-31
     #                          a stale WAKU_GRAPH_WORKFLOWS=1 ate a scripted
@@ -78,7 +77,7 @@ def make_waku(home: Path, client=None, **settings_overrides):
     # happened to `graph_workflows` here. Filtering keeps this list a superset
     # that costs nothing when an entry is absent.
     known = {f.name for f in dataclasses.fields(Settings)}
-    for switch in ("apple_calendar", "google_calendar", "apple_tools", "graph_workflows"):
+    for switch in ("google_calendar", "graph_workflows"):
         if switch in known:
             settings_overrides.setdefault(switch, False)
     settings = Settings(home=home, **settings_overrides)

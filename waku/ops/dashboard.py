@@ -555,7 +555,6 @@ def session_list(conn) -> list[dict]:
 # A tool's origin, for grouping in the Tools tab (name → category).
 _FLAGSHIP = {"create_event", "list_events", "save_note", "send_message"}
 _SELFMGMT = {"manage_memory", "update_soul", "create_skill"}
-_APPLE = {"read_apple_calendar", "read_apple_mail", "create_reminder", "create_note"}
 _WEB = {"search_web"}
 
 
@@ -566,8 +565,6 @@ def _tool_source(name: str, mcp_servers: list[str]) -> str:
         return "web"
     if name in _SELFMGMT:
         return "self-management"
-    if name in _APPLE:
-        return "apple"
     if any(name.startswith(f"{s}_") for s in mcp_servers):
         return "mcp"
     return "other"
@@ -617,7 +614,6 @@ def tools_info() -> dict:
         tools = [calendar.make_tool(
                      conn,
                      settings.home,
-                     apple_calendar=settings.apple_calendar,
                      google_calendar=settings.google_calendar,
                      google_calendar_id=settings.google_calendar_id,
                  ),
@@ -628,10 +624,6 @@ def tools_info() -> dict:
         if mem is not None:
             tools += [memory_admin.make_manage_memory_tool(mem),
                       memory_admin.make_create_skill_tool(settings, mem)]
-        if settings.apple_tools:
-            from waku.tools import apple
-
-            tools += apple.make_tools()
         if settings.experimental:
             # Mirror build_registry: without this the catalog LIES after you
             # flip the experimental toggle — delegate_task is missing until the
@@ -646,7 +638,7 @@ def tools_info() -> dict:
     catalog.sort(key=lambda c: (c["source"], c["name"]))
     from waku.tools.experimental import PLANNED
 
-    return {"catalog": catalog, "mcp": mcp, "apple_on": settings.apple_tools,
+    return {"catalog": catalog, "mcp": mcp,
             "planned": PLANNED}   # whiteboard boxes not wired in yet (coming soon)
 
 
@@ -1049,7 +1041,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 compare_stream((payload.get("message") or "").strip(), payload.get("models") or [],
                                emit, judge=bool(payload.get("judge")), coding=bool(payload.get("coding")),
-                               judge_spec=(payload.get("judge_model") or ""), apple=bool(payload.get("apple")))
+                               judge_spec=(payload.get("judge_model") or ""))
             except Exception as exc:
                 emit("done", {"error": f"{type(exc).__name__}: {exc}"})
             return

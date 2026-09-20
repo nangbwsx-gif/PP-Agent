@@ -21,9 +21,10 @@ subcommands every release. An allowlist only has to be right about the five we
 want. Refusal happens BEFORE a process exists, which is what
 test_gh_tool.py::test_write_commands_never_reach_a_subprocess pins.
 
-Same subprocess discipline as apple.py: an explicit timeout on every call,
-never `shell=True`, and failures come back as a sentence rather than an
-exception, because a GitHub hiccup must not take down a chat turn.
+Same subprocess discipline as every other external binary we shell out to: an
+explicit timeout on every call, never `shell=True`, and failures come back as a
+sentence rather than an exception, because a GitHub hiccup must not take down a
+chat turn.
 """
 
 from __future__ import annotations
@@ -70,7 +71,7 @@ _REFUSAL = (
 
 def _run(argv: list[str], timeout: int = _TIMEOUT) -> tuple[bool, str]:
     """One `gh` invocation. Returns (ok, text); the text is an explanation when
-    ok is False. Mirrors apple.py::_osa — same contract, different binary."""
+    ok is False. Same contract for every external binary we shell out to."""
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
     except FileNotFoundError:

@@ -67,7 +67,7 @@ def judge_client(provider: str | None = None, model: str | None = None):
     the id is blank, so read the id back off settings rather than the argument.
     """
     settings = Settings(provider=provider or JUDGE_PROVIDER, model=model or JUDGE_MODEL,
-                        small_model="", home=load_settings().home, apple_calendar=False)
+                        small_model="", home=load_settings().home)
     client = get_client(settings)
     return client, settings.model
 
@@ -88,7 +88,7 @@ def judge_reply(task: str, reply: str, provider: str | None = None,
                "\nThe assistant ran no tools this turn.\n")
     prompt = _RUBRIC.format(task=task[:2000], reply=reply[:4000], actions=actions)
     settings = Settings(provider=provider, model=model, small_model="",
-                        home=load_settings().home, apple_calendar=False)
+                        home=load_settings().home)
     # A race judges every column at once, so the endpoint sees a burst and may
     # 429. Retry ONLY the API call (with growing backoff); the semaphore caps how
     # many run concurrently. A response that arrives but won't parse isn't

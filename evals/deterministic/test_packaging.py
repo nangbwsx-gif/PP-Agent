@@ -93,7 +93,7 @@ def test_evals_never_inherit_the_developers_env():
     from evals import helpers
 
     src = inspect.getsource(helpers.make_waku)
-    for switch in ("apple_calendar", "google_calendar", "apple_tools", "graph_workflows"):
+    for switch in ("google_calendar", "graph_workflows"):
         assert switch in src, (
             f"make_waku no longer pins {switch!r} — a stale value in the "
             "maintainer's .env can now change what these tests measure"

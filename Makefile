@@ -16,7 +16,7 @@ run:            ## chat with Waku in the terminal
 voice:          ## talk to it — push-to-talk, or always-on with WAKU_WAKE_WORD
 	$(PY) -m waku voice
 
-brief:          ## morning briefing from calendar + mail + memory (as a LOOP)
+brief:          ## morning briefing from calendar + memory (as a LOOP)
 	$(PY) -m waku brief
 
 gather:         ## same job as a GRAPH: 4 sources in parallel, then one digest

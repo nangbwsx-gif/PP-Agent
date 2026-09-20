@@ -60,7 +60,7 @@ def build_elements() -> list[dict]:
     a(S.ellipse(1290, 350, 260, 130,
                 "LLM\nmodels.py adapter\n2 wire formats", color="pink"))
     a(S.labeled_box(1690, 295, 330, 230,
-                    "ToolRegistry\n\ncore: calendar · notes ·\nmessages · search\nself: memory · SOUL · skill\nedges: Apple · MCP\nexperimental: delegate + stubs",
+                    "ToolRegistry\n\ncore: calendar · notes ·\nmessages · search\nself: memory · SOUL · skill\nedges: GitHub · MCP\nexperimental: delegate + stubs",
                     color="orange", size=S.FS_BODY))
     a(S.labeled_arrow(1550, 365, 1690, 365, "tool calls", color=S.PAL["orange"][1]))
     a(S.labeled_arrow(1690, 475, 1550, 475, "results", color=S.PAL["orange"][1]))

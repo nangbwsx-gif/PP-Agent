@@ -38,15 +38,14 @@ uv pip install '.[voice-neural]'          # neural Kokoro (bm_george); pulls tor
 
 Override either engine with `WAKU_VOICE` (a `say` voice name, or a Kokoro voice like `bf_emma`).
 
-## Brief me on my week (Apple Calendar + Mail)
+## Brief me on my week
 
 ```bash
-WAKU_APPLE_TOOLS=1 make brief      # macOS; grant the permission prompts once
+make brief
 ```
 
-Waku reads your **real** Calendar.app (including events invited by email) and
-recent Apple Mail, cross-references your memory, and writes a focus-first briefing
-with clickable `message://` links. Cron it for a morning greeting:
+Waku reads your calendar, cross-references your memory, and writes a focus-first
+briefing. Cron it for a morning greeting:
 
 ```
 30 7 * * *  cd ~/waku-agent && make brief

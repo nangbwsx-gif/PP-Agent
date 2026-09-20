@@ -231,8 +231,7 @@ def test_the_workflow_cannot_act():
 def _code_lines(module) -> list[str]:
     """Source minus docstrings and comments — these modules DISCUSS the banned
     names at length in prose explaining why they are banned, and a test that
-    trips over its own explanation is a bad test (the lesson from
-    test_apple_tools.py's `whose` rule)."""
+    trips over its own explanation is a bad test."""
     import ast
 
     src = inspect.getsource(module)

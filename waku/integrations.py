@@ -135,14 +135,6 @@ def _notion_normalize(values: dict[str, str]) -> dict[str, str]:
     return values
 
 
-def _darwin(env: Mapping[str, str]) -> bool:
-    return sys.platform == "darwin" and bool(env.get("WAKU_APPLE_CALENDAR"))
-
-
-def _darwin_tools(env: Mapping[str, str]) -> bool:
-    return sys.platform == "darwin" and bool(env.get("WAKU_APPLE_TOOLS"))
-
-
 INTEGRATIONS: tuple[Integration, ...] = (
     Integration("google_calendar", "Calendar & Productivity", "Google Calendar",
                 "Lets Waku create and update Google Calendar events.",
@@ -150,15 +142,6 @@ INTEGRATIONS: tuple[Integration, ...] = (
                  EnvField("WAKU_GOOGLE_CALENDAR_ID", "Calendar ID", default="primary")),
                 "gcal", "googleapiclient", "https://developers.google.com/calendar/api/quickstart/python",
                 ReloadMode.AGENT, lambda env: bool(env.get("WAKU_GOOGLE_CALENDAR")), None),
-    Integration("apple_calendar", "Calendar & Productivity", "Apple Calendar",
-                "Lets Waku work with Apple Calendar on this Mac.",
-                (EnvField("WAKU_APPLE_CALENDAR", "Enable Apple Calendar", FieldKind.BOOL),
-                 EnvField("WAKU_APPLE_CALENDARS", "Calendars")), None, None, "", ReloadMode.AGENT,
-                _darwin, None),
-    Integration("apple_tools", "Calendar & Productivity", "Apple Tools",
-                "Lets Waku use Apple Mail and other local Apple tools.",
-                (EnvField("WAKU_APPLE_TOOLS", "Enable Apple tools", FieldKind.BOOL),), None, None,
-                "", ReloadMode.AGENT, _darwin_tools, None),
     Integration("notion", "Memory & Storage", "Notion", "Stores episodic memory in a Notion database.",
                 (EnvField("WAKU_EPISODIC_STORE", "Episodic store", FieldKind.CHOICE,
                           default="sqlite", options=("sqlite", "notion")),
@@ -330,8 +313,7 @@ def _status(integration: Integration, env: Mapping[str, str]) -> IntegrationStat
     enabled = integration.enabled(env)
     any_configured = any(_configured(field, value) for field, value in zip(integration.env, values, strict=True))
     if not enabled and not any_configured:
-        message = "macOS only" if integration.key.startswith("apple_") and sys.platform != "darwin" else ""
-        return IntegrationStatus(IntegrationState.NOT_CONFIGURED, message)
+        return IntegrationStatus(IntegrationState.NOT_CONFIGURED, "")
     missing = [field.name for field in integration.env if field.required and not env.get(field.name)]
     if missing:
         return IntegrationStatus(IntegrationState.INSTALLED_BUT_UNCONFIGURED, f"missing {', '.join(missing)}")
@@ -470,18 +452,6 @@ def _google_calendar_probe(values: Mapping[str, str]) -> None:
     )
 
 
-def _apple_calendar_probe(values: Mapping[str, str]) -> None:
-    from waku.tools import calendar
-
-    calendar.probe_apple_calendar()
-
-
-def _apple_tools_probe(values: Mapping[str, str]) -> None:
-    from waku.tools import apple
-
-    apple.probe_apple_tools()
-
-
 def _tavily_probe(values: Mapping[str, str]) -> None:
     body = json.dumps({"api_key": values.get("TAVILY_API_KEY", ""), "query": "health check", "max_results": 1}).encode()
     request = urllib.request.Request("https://api.tavily.com/search", body, {"Content-Type": "application/json"})
@@ -521,10 +491,6 @@ def _provider_probe(values: Mapping[str, str]) -> None:
 
 
 def _probed(integration: Integration) -> Integration:
-    if integration.key == "apple_calendar":
-        return Integration(**{**integration.__dict__, "probe": _apple_calendar_probe})
-    if integration.key == "apple_tools":
-        return Integration(**{**integration.__dict__, "probe": _apple_tools_probe})
     if integration.key == "google_calendar":
         return Integration(**{**integration.__dict__, "probe": _google_calendar_probe})
     if integration.key == "notion":

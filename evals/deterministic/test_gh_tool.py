@@ -17,9 +17,7 @@ stronger claim that the subprocess is never reached at all. The second is what
 matters: a tool that spawns `gh pr merge` and then inspects the result has
 already merged the PR.
 
-Lesson carried over from test_apple_tools.py, where four tools sat broken for
-weeks behind a green suite: assert on the command that WOULD run, not on prose
-describing it.
+The lesson: assert on the command that WOULD run, not on prose describing it.
 """
 
 from __future__ import annotations
@@ -127,9 +125,8 @@ def _code_lines(module) -> list[str]:
 
     github.py DISCUSSES `shell=True` at length on purpose — the docstring is
     where the rule is explained. A naive substring search over the raw source
-    therefore trips over the very sentence forbidding the thing, which is
-    exactly the trap test_apple_tools.py hit with its `whose` rule. Assert on
-    the CODE, not on the prose about the code.
+    therefore trips over the very sentence forbidding the thing. Assert on the
+    CODE, not on the prose about the code.
     """
     import ast
 
@@ -151,7 +148,7 @@ def test_no_shell_true_anywhere():
 
 
 def test_every_gh_call_is_bounded(capture):
-    """One hung network call must not hang a chat turn — same rule as apple.py."""
+    """One hung network call must not hang a chat turn."""
     sig = inspect.signature(github._run)
     assert sig.parameters["timeout"].default, "_run must always have a timeout default"
     github.gh_read("pr list")

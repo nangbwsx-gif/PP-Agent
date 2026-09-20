@@ -99,7 +99,7 @@ friendly view; the **Data** tab shows the raw `state.db` tables.
   structure around the loop. The loop never changes, a graph node can be a loop
   turn, and every failure fails open to the plain loop.
 - `waku/tools/` — what the agent can call: `calendar.py`, `google_calendar.py`,
-  `apple.py`, `notes.py`, `messages.py`, `search.py`, `github.py`,
+  `notes.py`, `messages.py`, `search.py`, `github.py`,
   `workspace.py`, `memory_admin.py`, the MCP client and `experimental.py`.
   `registry.py` decides which are on.
 - `waku/memory/` — semantic (FTS5), episodic and procedural (SKILL.md) memory,

@@ -290,7 +290,6 @@ const CONNECTION_GROUP_MAP = {
 };
 
 function connectionDisplayGroup(item){
-  if (item.key === "apple_tools") return "Tools";
   return CONNECTION_GROUP_MAP[item.group] || "Tools";
 }
 
@@ -529,7 +528,7 @@ const VIEWS = {
     `)}`;
   },
   tools(d, sub){
-    const t = d.tools || {catalog:[], mcp:{configured:false,servers:[],live:false}, apple_on:false};
+    const t = d.tools || {catalog:[], mcp:{configured:false,servers:[],live:false}};
     sub = sub || "available";
     const tabs = [["available","Available",t.catalog.length],["results","Results"],
       ["mcp","MCP",t.mcp.servers.length||null]];
@@ -539,11 +538,10 @@ const VIEWS = {
     // Available: what the agent CAN do (grouped by origin), not just what it did.
     h += `<div class="meta" style="margin-bottom:var(--space-3)">The capabilities the agent can call this turn.
       A tool is a name + description the model reads, a JSON schema, and a Python function — that's it.
-      ${t.apple_on?"":"Apple tools are off (set <code>WAKU_APPLE_TOOLS=1</code>). "}Connect more via
-      ${uiLink("MCP", "#tools/mcp")}.</div>`;
+      Connect more via ${uiLink("MCP", "#tools/mcp")}.</div>`;
     const SRC = [["flagship","Flagship task — scheduling"],["web","Web search"],
       ["self-management","Self-management — it edits its own memory"],
-      ["apple","Apple ecosystem"],["mcp","MCP servers"],["other","Other"]];
+      ["mcp","MCP servers"],["other","Other"]];
     SRC.forEach(([key,label]) => {
       const items = t.catalog.filter(c => c.source === key);
       if (!items.length) return;

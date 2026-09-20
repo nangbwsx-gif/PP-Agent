@@ -33,7 +33,7 @@ from waku.ops.pricing import cutoff_for, price_for
 
 
 def compare_stream(message: str, specs: list, emit, judge: bool = False,
-                   coding: bool = False, judge_spec: str = "", apple: bool = False) -> None:
+                   coding: bool = False, judge_spec: str = "") -> None:
     """Race the models and stream each one's harness LIVE — gate decision and
     tool calls, per model — so every column plays out like the chat dock instead
     of a static 'racing…'. Each contestant runs the REAL loop (tools included) in
@@ -97,14 +97,11 @@ def compare_stream(message: str, specs: list, emit, judge: bool = False,
             # coding mode registers delegate_task (the pi sub-agent) so the loop
             # can hand real programming work to pi — running the FULL harness
             # (gate, memory, tools), not a bypass. pi runs on this card's model.
-            # apple_calendar defaults OFF (isolation), opt-in per race — when on,
-            # EACH model writes its own event to the real 'Waku' calendar.
             settings = Settings(
                 provider=provider,
                 model=model,
                 small_model="",
                 home=home,
-                apple_calendar=apple,
                 google_calendar=False,
                 experimental=coding,
             )

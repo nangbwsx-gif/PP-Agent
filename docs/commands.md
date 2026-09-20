@@ -10,7 +10,7 @@ targets are aliases for the same things, plus the eval and tracing tools.
 | `waku` | chat in the terminal |
 | `waku dashboard` | the live cockpit at localhost:7777 |
 | `waku voice` | talk to it — the "waku waku" wake word, or push-to-talk (needs the `[voice]` extra) |
-| `waku brief` | a morning briefing from calendar + mail + memory, run as a loop |
+| `waku brief` | a morning briefing from calendar + memory, run as a loop |
 | `waku gather` | the same job as a graph: four sources fetched together, then one digest |
 | `waku connections` | every integration and its health, including Waku Memory |
 | `waku connect google` | sign in to Google Calendar (opens your browser) |

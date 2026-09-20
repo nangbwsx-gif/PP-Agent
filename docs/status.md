@@ -16,7 +16,7 @@ The four pillars run: the loop, memory (semantic + episodic + procedural with
 a retrieval gate), tools, and both eval tiers. `waku`, `waku dashboard`,
 `waku voice`, `waku brief` and `waku connect google` all start.
 
-**725 deterministic evals pass offline**, with no API key; 63 more are live
+**692 deterministic evals pass offline**, with no API key; 61 more are live
 evals that skip without one. On Windows 3 of them fail (temp-file and process
 assumptions, not this checkout) and 2 more need `python -X utf8` to read files
 with the locale codec — see Known broken. CI runs the offline tier on every PR

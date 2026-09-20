@@ -1,7 +1,7 @@
-"""Configuration — every knob is an env var, documented in .env.example.
+"""
+配置——每一个可调项都是环境变量，并在 .env.example 中有文档说明。
 
-No settings framework: a dataclass read once at startup. If you can read this
-file, you know everything Waku can be configured to do.
+没有设置框架：只是一个在启动时读取一次的 dataclass。如果你能读懂这个文件，你就知道 Waku 可以被配置成做什么。
 """
 
 from __future__ import annotations
@@ -14,23 +14,14 @@ from dotenv import find_dotenv, load_dotenv
 
 
 def _load_env() -> str:
-    """Find the user's .env the way the user expects: from where they ARE.
-
-    Bare `load_dotenv()` searches upward from the file that called it, not from
-    the working directory. Inside a git checkout that is invisible — config.py
-    lives in the project, so walking up from it lands on the project's .env and
-    everything works. Installed from PyPI it walks up from site-packages,
-    reaches the filesystem root, and finds nothing: the user stands in a folder
-    holding a perfectly good .env and Waku reports "No API key". Reported from
-    a clean install on 2026-07-31, from inside the repo folder itself.
-
-    usecwd=True is the whole fix. The walk upward is kept on purpose, so
-    running `waku` from a subdirectory of your project still finds the .env at
-    its root — the same rule git, npm and pytest already taught everyone.
-
-    Returns the path that was loaded (empty string if none) so `waku doctor`
-    and the first-run error can say WHICH file was read, rather than leaving
-    people guessing between three .env files.
+    """
+    以用户期望的方式查找用户的 .env 文件：从用户“所在”的位置开始。
+    裸调用 load_dotenv() 会从调用它的那个文件所在位置向上搜索，而不是从当前工作目录搜索。
+    在 git 仓库里这问题看不出来——config.py 就在项目里，从它向上走会落到项目的 .env 上，一切正常。
+    但从 PyPI 安装后，它会从 site-packages 向上走，一直走到文件系统根目录，什么也找不到：
+    用户明明站在一个放着完好 .env 的文件夹里，Waku 却报“没有 API key”。这个问题在 2026-07-31 从一次干净安装中被报告，而且就是从仓库文件夹内部报告的。
+    usecwd=True 就是全部的修复。向上搜索是故意保留的，这样从项目的子目录运行 waku 时，仍然能找到项目根目录的 .env——和 git、npm、pytest 已经教会大家的规则一样。
+    返回被加载的路径（如果没有则返回空字符串），这样 waku doctor 和首次运行的错误信息就能说出到底读了哪个文件，而不是让人在三个 .env 文件之间猜来猜去。
     """
     path = find_dotenv(usecwd=True)
     if path:
@@ -43,99 +34,87 @@ DOTENV_PATH = _load_env()
 
 @dataclass
 class Settings:
-    # --- LLM: pick a provider, set its key. See waku/loop/models.py PROVIDERS.
+    
+    # --- LLM：选择一个提供商，设置其密钥。参见 waku/loop/models.py 中的 PROVIDERS。
     provider: str = field(default_factory=lambda: os.getenv("WAKU_PROVIDER", "anthropic"))
-    # Explicit overrides (optional): key, endpoint, and model ids. Left empty,
-    # the provider's own key env var and default models are used.
+    # 显式覆盖（可选）：密钥、端点和模型 ID。留空时，将使用提供商自己的密钥环境变量和默认模型。
     api_key: str = field(default_factory=lambda: os.getenv("WAKU_API_KEY", ""))
     base_url: str | None = field(default_factory=lambda: os.getenv("WAKU_BASE_URL") or None)
     model: str = field(default_factory=lambda: os.getenv("WAKU_MODEL", ""))
-    # Cheap model used by the retrieval gate and the consolidation summarizer.
+    # 用于检索门和整合摘要器的廉价模型。
     small_model: str = field(default_factory=lambda: os.getenv("WAKU_SMALL_MODEL", ""))
-    # Providers the user turned off in the dashboard (comma-separated ids).
-    # Disabled providers are hidden from pickers/switchers; the ACTIVE provider
-    # can't be disabled (guarded in integrations.apply_provider_disabled).
+    # 用户在仪表板中关闭的提供商（逗号分隔的 ID）。
+    # 已禁用的提供商会从选择器/切换器中隐藏；当前活动的提供商
+    # 不能被禁用（在 integrations.apply_provider_disabled 中有保护）。
     disabled_providers: frozenset[str] = field(default_factory=lambda: frozenset(
         p.strip() for p in os.getenv("WAKU_DISABLED_PROVIDERS", "").split(",") if p.strip()))
 
-    # --- Home: where Waku keeps its state (memory DB, calendar, outbox, traces).
-    # Defaults to ./.waku next to where you run it, so you can open every file
-    # it writes. Local-first means you can always look.
+    # --- Home：Waku 保存其状态的位置（记忆数据库、日历、发件箱、追踪）。
+    # 默认在运行目录旁边的 ./.waku，这样你可以打开它写入的每个文件。
+    # 本地优先意味着你总能查看。
     home: Path = field(default_factory=lambda: Path(os.getenv("WAKU_HOME", ".waku")))
 
-    # --- Loop guardrails
+    # --- 循环保护措施
     max_iterations: int = field(default_factory=lambda: int(os.getenv("WAKU_MAX_ITERATIONS", "10")))
-    # Headroom matters for REASONING models (kimi-k3, gpt-5.x, gemini-*-pro):
-    # they spend output tokens thinking before the answer, so a low cap makes
-    # them hit stop_reason=max_tokens mid-thought and return an EMPTY reply
-    # (watched kimi-k3 do exactly that at 2048). 8192 leaves room to think AND
-    # answer; it's a ceiling, not a target, so efficient models still cost the same.
+    # 对于推理模型（kimi-k3、gpt-5.x、gemini-*-pro）来说，余量很重要：
+    # 它们会在回答前花费输出 token 进行思考，因此上限过低会使
+    # 它们在思考中途达到 stop_reason=max_tokens 并返回空回复
+    # （观察到 kimi-k3 在 2048 时正是如此）。8192 为思考和回答
+    # 都留出了空间；它是上限而非目标，所以高效模型的成本仍然相同。
     max_tokens: int = field(default_factory=lambda: int(os.getenv("WAKU_MAX_TOKENS", "8192")))
-    # Working memory is a SLIDING WINDOW (like context RAM): only the last N
-    # turns go into the prompt. Older turns aren't lost — they're in state.db,
-    # distilled into facts by consolidation, and pulled back by the retrieval
-    # gate when relevant. Without this cap a long thread (esp. an always-on
-    # gateway session) resends its whole history every turn until it explodes.
+    # 工作记忆是一个滑动窗口（类似上下文 RAM）：只有最近 N 轮
+    # 进入提示。更早的轮次不会丢失——它们保存在 state.db 中，
+    # 由整合过程提炼为事实，并在相关时由检索门拉回。
+    # 没有这个上限，长线程（尤其是常开的网关会话）会每轮重发整个历史，直到爆炸。
     history_turns: int = field(default_factory=lambda: int(os.getenv("WAKU_HISTORY_TURNS", "12")))
 
-    # --- Memory
-    # Consolidate (distill chats into durable facts) only after N new exchanges.
+    # --- 记忆
+    # 仅在 N 次新交换后整合（将聊天提炼为持久事实）。
     consolidate_every: int = field(default_factory=lambda: int(os.getenv("WAKU_CONSOLIDATE_EVERY", "6")))
     retrieval_top_k: int = field(default_factory=lambda: int(os.getenv("WAKU_RETRIEVAL_TOP_K", "4")))
-    # 'sqlite' (default, zero setup) or 'supabase' (pgvector upgrade path — see launch-rag).
+    # 'sqlite'（默认，零配置）或 'supabase'（pgvector 升级路径——参见 launch-rag）。
     semantic_store: str = field(default_factory=lambda: os.getenv("WAKU_SEMANTIC_STORE", "sqlite"))
-    # 'sqlite' (default, zero setup) or 'notion' (episodes live in a Notion database).
+    # 'sqlite'（默认，零配置）或 'notion'（片段存放在 Notion 数据库中）。
     episodic_store: str = field(default_factory=lambda: os.getenv("WAKU_EPISODIC_STORE", "sqlite"))
 
-    # --- Tools
-    # Sync created events into Apple Calendar (a dedicated "Waku" calendar)
-    # via AppleScript. Opt-in because it writes to your real calendar app.
-    apple_calendar: bool = field(
-        default_factory=lambda: os.getenv("WAKU_APPLE_CALENDAR", "") in ("1", "true", "yes")
-    )
-    # Mirror locally-created events to Google Calendar. SQLite + ICS remain the
-    # source of truth; this is only an opt-in write target.
+    # --- 工具
+    # 将本地创建的事件镜像到 Google 日历。SQLite + ICS 仍是
+    # 事实来源；这只是一个选择加入的写入目标。
     google_calendar: bool = field(
         default_factory=lambda: os.getenv("WAKU_GOOGLE_CALENDAR", "") in ("1", "true", "yes")
     )
     google_calendar_id: str = field(
         default_factory=lambda: os.getenv("WAKU_GOOGLE_CALENDAR_ID", "") or "primary"
     )
-    # Give the agent read/write access to Apple Calendar, Mail, Reminders, Notes
-    # (macOS; first use triggers the system Automation permission prompts).
-    apple_tools: bool = field(
-        default_factory=lambda: os.getenv("WAKU_APPLE_TOOLS", "") in ("1", "true", "yes")
-    )
-    # Read-only GitHub access through the `gh` CLI's own auth (no token here).
-    # Off by default and deliberately so: every registered tool ships in every
-    # prompt, and reading PRs is maintainer capability, not assistant capability.
-    # The gather workflow calls waku/tools/github.py as a library and does NOT
-    # need this on — the switch only decides whether the MODEL can reach it.
+    # 通过 `gh` CLI 自身的认证进行只读 GitHub 访问（此处无需令牌）。
+    # 默认关闭且有意如此：每个注册的工具都会出现在每个
+    # 提示中，而读取 PR 是维护者能力，不是助手能力。
+    # gather 工作流以库的形式调用 waku/tools/github.py，不需要
+    # 开启此开关——该开关只决定模型能否访问它。
     gh_tool: bool = field(
         default_factory=lambda: os.getenv("WAKU_GH_TOOL", "") in ("1", "true", "yes")
     )
-    # owner/name to assume when a call omits it — for when Waku runs outside a
-    # checkout, where `gh` has no remote to infer from.
+    # 当调用省略 owner/name 时假定的值——用于 Waku 在
+    # 检出目录之外运行，此时 `gh` 没有可推断的远程仓库。
     gh_repo: str = field(default_factory=lambda: os.getenv("WAKU_GH_REPO", ""))
-    # Register the experimental tools (delegate_task -> pi sub-agent, ...). Env is
-    # the global switch; the arena sets this per-race so a coding race can hand
-    # work to pi WITHOUT flipping it on for the whole process.
+    # 注册实验性工具（delegate_task -> pi 子代理，...）。环境变量是
+    # 全局开关；竞技场按比赛设置此项，这样编码比赛可以将工作
+    # 交给 pi，而无需为整个进程打开它。
     experimental: bool = field(
         default_factory=lambda: os.getenv("WAKU_EXPERIMENTAL", "") in ("1", "true", "yes")
     )
-    # Route every message through the triage graph workflow first (a small model
-    # classifies it; trivial messages get a fast small-model reply, real tasks
-    # run the normal loop as a graph node). Any failure anywhere fails open to
-    # the plain loop, so this can never make Waku worse — only faster/cheaper.
+    # 先将每条消息路由通过分诊图工作流（一个小模型对其进行分类；
+    # 琐碎消息获得快速的小模型回复，真实任务作为图节点运行正常循环）。
+    # 任何地方的任何失败都会失败开放到普通循环，所以这永远不会让 Waku 变差——只会更快/更便宜。
     graph_workflows: bool = field(
         default_factory=lambda: os.getenv("WAKU_GRAPH_WORKFLOWS", "") in ("1", "true", "yes")
     )
 
-    # --- Tracing (JSONL always; OTel exports if an endpoint is set)
+    # --- 追踪（始终 JSONL；如果设置了端点则导出 OTel）
     otel_endpoint: str = field(
         default_factory=lambda: os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     )
-
+    
     def ensure_home(self) -> Path:
         self.home.mkdir(parents=True, exist_ok=True)
         (self.home / "traces").mkdir(exist_ok=True)
