@@ -1,4 +1,11 @@
-"""Wiring — builds one Waku from its parts. Gateways call `respond()`.
+"""装配层 —— 把一个 Waku 从它的零件拼起来。所有 gateway 都调 `respond()`。
+
+中文导读（先看这三条，再往下读代码）：
+  1. `Waku()` 构造时按固定顺序装配六个零件 —— 顺序就是依赖顺序，见 __init__。
+  2. `respond()` 是唯一对外的入口，一轮对话 = 组装工作记忆 → 跑 loop → 落库。
+     CLI / dashboard / voice 三个 gateway 都只做两件事：把文本递进来、把文本送出去。
+  3. 这个文件不实现记忆、不实现 loop，只负责"接线"和"一轮的时序"。
+     想读懂整个仓库，从这里开始是对的路。
 
 This file is the assembly diagram in code: config → db → tools → memory →
 session → loop. If you want to understand the repo in one place, start here.
@@ -17,41 +24,61 @@ from waku.tools import build_registry
 
 class Waku:
     def __init__(self, settings: Settings | None = None, client=None, conn=None):
+        # ── 装配：下面六行就是全部依赖关系，从上到下 ──────────────────────
+        # `client` 和 `conn` 可注入：eval 塞一个脚本化的假模型，dashboard 注入
+        # 跨线程的连接。同一个接缝，两种用途。
         # `client` and `conn` are injectable: evals swap in a scripted model,
         # the dashboard injects a cross-thread connection. Same seam either way.
-        self.settings = settings or load_settings()
-        self.settings.ensure_home()
-        self.conn = conn or connect(self.settings.home)
-        self.client = client or get_client(self.settings)
+        self.settings = settings or load_settings()        # 读 .env + 默认值（见 config.py）
+        self.settings.ensure_home()                        # 建 .waku/ traces/ outbox/
+        self.conn = conn or connect(self.settings.home)    # 一个 SQLite 文件 = 全部记忆
+        self.client = client or get_client(self.settings)  # 模型客户端（按 provider 适配）
 
+        # 记忆必须最先建：下面三个"自我管理"工具要拿它当构造参数。
         # Memory first: the memory-management tools need it.
         from waku.memory import Memory
 
         self.memory = Memory(self.conn, self.settings, self.client)
-        self.tools = build_registry(self.conn, self.settings, self.memory)
-        self.mcp_bridge = getattr(self.tools, "mcp_bridge", None)
-        self.session = Session(self.settings, memory=self.memory)
-        self.tracer = Tracer(self.settings)
+        self.tools = build_registry(self.conn, self.settings, self.memory)  # 工具注册表
+        self.mcp_bridge = getattr(self.tools, "mcp_bridge", None)          # 外部 MCP 子进程句柄
+        self.session = Session(self.settings, memory=self.memory)          # 工作记忆（每轮重建）
+        self.tracer = Tracer(self.settings)                               # 每个事件写一行 JSONL
 
     def close(self) -> None:
-        """Release external resources (MCP subprocesses). Called when the
-        dashboard rebuilds the agent after a settings change."""
+        """只关外部资源（MCP 子进程）。dashboard 在设置变更后重建 agent 时会调。
+
+        Release external resources (MCP subprocesses). Called when the
+        dashboard rebuilds the agent after a settings change.
+        """
         if self.mcp_bridge is not None:
             self.mcp_bridge.close()
 
     def respond(self, user_message: str, observer: Observer | None = None,
                 source: str = "cli", stream: bool = False) -> LoopResult:
-        """One full turn: assemble working memory → run the loop → persist.
+        """一轮完整对话：组装工作记忆 → 跑 loop → 落库。
+
+        One full turn: assemble working memory → run the loop → persist.
         `source` tags which gateway the message arrived through (cli / voice /
         dashboard), so the unified chat can show its origin.
         `stream=True` streams the reply text token by token to the observer.
-        Everything that happens is both shown (observer) and recorded (tracer)."""
+        Everything that happens is both shown (observer) and recorded (tracer).
+
+        中文时序 —— 本函数的骨架，读代码时对着这五步看：
+          1. 起 tracer.turn()：之后每个事件既给 observer（界面），又写 trace
+          2. 可选前门：过 triage 图（闲聊用便宜小模型快答），任何异常都掉回第 3 步
+          3. 否则 _run_full_turn()：装 system prompt + 滑窗历史 → run_loop（真正的循环）
+          4. 组装 meta：gate 决策、图路由、耗时、工具、这一轮用的模型
+          5. 存消息，然后跑记忆巩固、刷新 MEMORY.md
+        """
+        # 顺手把"检索 gate 决策"和"图路由"抄进 captured，好跟着这一轮一起入库
+        # （dashboard 重开旧对话时显示的，就是这个遥测）
         # capture the gate + graph decisions as they flow by, so we can persist
         # them with the turn (the reopened-thread telemetry the dashboard shows)
         import time
         captured: dict = {}
 
         def _capture(kind, ev):
+            # 只留这四类事件：检索 gate、图路由、triage 理由、图路径
             if kind == "gate":
                 captured["gate"] = {"decision": ev.get("decision"), "reason": ev.get("reason")}
             if kind == "route":
@@ -60,10 +87,14 @@ class Waku:
                 captured["triage_reason"] = ev.get("reason")
             if kind == "graph_end":
                 captured["graph_path"] = ev.get("path")
+        # notify = 同一条事件流有三个去处：界面(observer) / trace / 上面的 captured
         notify = compose(observer, self.tracer.event, _capture)
-        t0 = time.perf_counter()
+        t0 = time.perf_counter()   # 计时起点，最后写进 meta["latency_ms"]
 
-        with self.tracer.turn(user_message):
+        with self.tracer.turn(user_message):   # 出这个 with 就封口这一轮的 trace
+            # 图前门是可选的，而且"只会更好、不会更坏"：开关关着 = 与以前完全相同的
+            # 代码路径；开着 = 由 triage 图判断快答还是全流程，中途任何失败都掉回下面的
+            # 普通 loop（和检索 gate 同一条 fail-open 原则）。
             # The graph front door is optional and can NEVER make Waku worse:
             # flag off → this is exactly the old code path; flag on → the triage
             # graph decides quick vs full, and any failure anywhere falls open
@@ -82,40 +113,55 @@ class Waku:
             quick = captured.get("graph_route", {}).get("target") == "quick_reply"
 
             def _status(out: str) -> str:
+                """工具输出没有结构化状态码，只能按关键字猜成功还是失败。"""
                 low = (out or "").lower()
                 return "error" if ("failed" in low or "timed out" in low
                                    or low.startswith("error")) else "ok"
+            # meta = 这一轮的"体检报告"，落库后 dashboard 每张对话卡片靠它显示细节
             meta = {
-                "gate": captured.get("gate"),
-                "graph": ({"workflow": "triage",
+                "gate": captured.get("gate"),            # 检索 gate：跳还是取，以及理由
+                "graph": ({"workflow": "triage",      # 图路由：quick 还是 full、走了哪些节点
                            "route": "quick" if quick else "full",
                            "reason": captured.get("triage_reason", ""),
                            "path": captured.get("graph_path")}
                           if "graph_route" in captured else None),
-                "iterations": result.iterations,
-                "latency_ms": int((time.perf_counter() - t0) * 1000),
+                "iterations": result.iterations,          # loop 转了几圈
+                "latency_ms": int((time.perf_counter() - t0) * 1000),   # 端到端耗时
                 "tools": [{"tool": c["tool"], "status": _status(c["output"])}
-                          for c in result.tool_calls],
+                          for c in result.tool_calls],    # 这轮调了哪些工具、成功与否
+                # 这一轮到底是哪个模型答的 —— 重开旧对话（或中途换过模型）时按卡片显示。
+                # 图的快答分支由小模型回答，这里就如实写小模型。
                 # which brain answered this turn — so a reopened thread (or a
                 # thread you switched models mid-way) shows it per card. A quick
                 # graph turn was answered by the small model; say so honestly.
                 "model": self.settings.small_model if quick else self.settings.model,
                 "provider": self.settings.provider,
             }
+            # 落这一轮：用户消息 + 回复 + 工具调用 + 上面的 meta，并按 source 标注来源
             self.session.add_exchange(user_message, result.reply, tool_calls=result.tool_calls,
                                       source=source, meta=meta)
             if self.memory is not None:
+                # 攒够 N 轮才蒸馏成持久事实（默认每 6 轮一次，省钱）
                 self.memory.maybe_consolidate(notify=notify)
-                self.memory.export_markdown()   # keep MEMORY.md in sync
+                self.memory.export_markdown()   # 刷新可读版 MEMORY.md（真源仍是 state.db）
 
-        self.tracer.end_turn(result.reply, result.iterations)
+        self.tracer.end_turn(result.reply, result.iterations)   # 收尾：补一行 turn 总结
         return result
 
     def _run_full_turn(self, user_message: str, notify, stream: bool) -> LoopResult:
-        """The classic turn: assemble working memory, run THE loop. Extracted
-        verbatim so the graph's full_agent node calls the SAME code as the
-        flag-off default — loop-as-a-node can never drift from loop-as-default."""
+        """经典的完整回合：装工作记忆，跑 THE loop（loop/agent.py 那个 while）。
+
+        Extracted verbatim so the graph's full_agent node calls the SAME code as
+        the flag-off default — loop-as-a-node can never drift from loop-as-default.
+
+        为什么单独拆成一个函数：图里的 full 分支必须调用"和默认路径完全相同"的
+        代码，否则两条路会各自演化、慢慢跑偏。
+        """
+        # system prompt = SOUL.md（人格）+ 本轮该带的记忆 + 当前时间
         system = self.session.build_system(user_message, notify=notify)
+        # 工作记忆是有界的滑窗：只把最近 N 轮（每轮 2 行）放进 prompt，所以聊多久
+        # 上下文/成本/延迟都不涨。更早的内容没丢 —— 它们在 state.db 里，需要时由
+        # 检索 gate + 情节记忆捞回来。
         # Working memory is a bounded window: only the last N turns (2 rows
         # each) enter the prompt, so context/cost/latency stay flat no matter
         # how long the conversation runs. Older turns live in state.db and
@@ -123,6 +169,7 @@ class Waku:
         window = self.settings.history_turns * 2
         messages = self.session.history[-window:] + [{"role": "user", "content": user_message}]
 
+        # 真正进循环：reason → tool → observe → repeat，直到模型不再要工具或到轮数上限
         return run_loop(
             client=self.client,
             model=self.settings.model,
@@ -136,9 +183,13 @@ class Waku:
         )
 
     def _respond_via_graph(self, user_message: str, notify, stream: bool) -> LoopResult | None:
-        """One turn through the triage graph workflow. Returns None whenever
+        """走 triage 图工作流的路径。图没给出答案就返回 None —— 上层 respond()
+        随即掉回普通 loop，所以这条路只可能"更快"，不会丢回复。
+
+        One turn through the triage graph workflow. Returns None whenever
         the graph didn't produce an answer — respond() then falls open to the
-        plain loop, so this path can only ever ADD speed, never lose a reply."""
+        plain loop, so this path can only ever ADD speed, never lose a reply.
+        """
         from waku.graph import run_graph
         from waku.graph.workflows.triage import (
             QUICK_REPLY_PROMPT,
@@ -148,6 +199,8 @@ class Waku:
         )
 
         def quick_reply(state: dict) -> str:
+            # "快答"分支：不开工具、只带今天的日历，用便宜的小模型一次问完。
+            # 闲聊、"今天几号"这类问题走这里，省掉一整圈 loop 的钱和时间。
             prompt = QUICK_REPLY_PROMPT.format(calendar=state.get("calendar", ""),
                                                message=state["message"])
             response = self.client.messages.create(
@@ -155,18 +208,22 @@ class Waku:
                 messages=[{"role": "user", "content": prompt}])
             return "".join(b.text for b in response.content if b.type == "text")
 
+        # 四个节点回调：classify 判快/慢，calendar 拿今天日程，quick 直接答，full 进真正的 loop
         graph = build_triage_graph(
             classify_fn=lambda m: classify_message(self.client, self.settings.small_model, m),
             calendar_fn=lambda: todays_events(self.settings.home),
             quick_fn=quick_reply,
+            # full 分支调的就是"开关关闭时那个默认方法"，保证两条路不跑偏；
+            # 引擎的 notifier 会给里面产生的事件打上 node= 标签（图表里能看到）
             # the full path is the SAME method the flag-off default runs; the
             # engine's tagged notifier stamps its inner events with node=
             full_fn=lambda state: self._run_full_turn(
                 state["message"], state.get("_notify", notify), stream),
         )
         state = run_graph(graph, {"message": user_message}, observer=notify)
+        # 图跑完了，把结果翻译成 LoopResult；三种情况都要覆盖，见下。
         if isinstance(state.get("result"), LoopResult):
-            return state["result"]
+            return state["result"]        # full 分支跑过真正的 loop，原样返回
         if state.get("reply"):
-            return LoopResult(reply=state["reply"], tool_calls=[], iterations=1)
-        return None  # graph produced nothing → caller falls open to the loop
+            return LoopResult(reply=state["reply"], tool_calls=[], iterations=1)  # quick 分支
+        return None  # 图什么都没产出 → 交给调用方掉回普通 loop（fail open）
