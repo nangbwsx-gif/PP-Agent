@@ -897,14 +897,27 @@ ZH_HEAD = (
 )
 
 
+# 开发者模式：个人用户默认只看核心页面（总览/记忆/工具/行为），
+# 其余八个页面属于"能自己读 trace、自己配模型"的人。只用启动参数表达，
+# 页面上那个开关走 localStorage（见 static/js/mode.js 里的优先级）。
+DEV_HEAD = '<script>window.WAKU_DEV=true</script>\n'
+
+
+def developer_mode() -> bool:
+    """--dev 打开了开发者导航；默认关。"""
+    return os.getenv("WAKU_DEV", "").strip().lower() in ("1", "true", "yes")
+
+
 def interface_lang() -> str:
     """'zh' 只在明确要求时才是 zh；其余一切都保持英文。"""
     return "zh" if os.getenv("WAKU_LANG", "").strip().lower().startswith("zh") else "en"
 
 
 def index_html() -> bytes:
-    """dashboard 的外壳页面，用启动时的语言。"""
+    """dashboard 的外壳页面，用启动时的语言和模式。"""
     html = (STATIC / "index.html").read_text(encoding="utf-8")
+    if developer_mode():
+        html = html.replace("</head>", DEV_HEAD + "</head>", 1)
     if interface_lang() == "zh":
         html = html.replace("<html>", '<html lang="zh">', 1)
         html = html.replace("</head>", ZH_HEAD + "</head>", 1)

@@ -58,6 +58,21 @@ globalThis.document = {
   querySelectorAll: () => [],
   documentElement: {},
 };
+// mode.js reads the stored choice and writes it back on toggle.
+const _store = {};
+globalThis.localStorage = {
+  getItem: (k) => (k in _store ? _store[k] : null),
+  setItem: (k, v) => { _store[k] = String(v); },
+  removeItem: (k) => { delete _store[k]; },
+};
+// mode.js reads location.hash to send a deep link away from a hidden page.
+globalThis.location = { hash: "#overview" };
+
+// 让测试用不同的模式组合跑同一个 bundle：
+//   SMOKE_DEV_FLAG=1      模拟 `waku dashboard --dev`
+//   SMOKE_DEV_STORED=1|0  模拟用户在行为页切过开关
+if (process.env.SMOKE_DEV_FLAG === "1") globalThis.WAKU_DEV = true;
+if (process.env.SMOKE_DEV_STORED !== undefined) _store["waku-dev"] = process.env.SMOKE_DEV_STORED;
 
 // One eval, so the three files share a lexical scope: lang/zh.js declares
 // `const ZH` and i18n.js reads it. Separate evals would not see each other —
@@ -65,12 +80,14 @@ globalThis.document = {
 const bundle = [
   fs.readFileSync(path.join(STATIC, "lang", "zh.js"), "utf8"),
   fs.readFileSync(path.join(STATIC, "js", "i18n.js"), "utf8"),
+  fs.readFileSync(path.join(STATIC, "js", "mode.js"), "utf8"),
   fs.readFileSync(path.join(STATIC, "js", "views.js"), "utf8"),
-  "globalThis.__VIEWS = VIEWS; globalThis.__T = t; globalThis.__ZH = ZH;",
+  "globalThis.__VIEWS = VIEWS; globalThis.__T = t; globalThis.__ZH = ZH; globalThis.__DEV_ON = DEV_ON;",
 ].join("\n;\n");
 eval(bundle);
 
 const VIEWS = globalThis.__VIEWS;
+console.log(`dev mode: ${globalThis.__DEV_ON}`);
 
 // Every view, and every sub-tab of the ones that have them. A sub-tab is a
 // separate render path, and two of the three bugs above lived in one.

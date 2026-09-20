@@ -3,6 +3,7 @@
   waku                       chat in the terminal (default)
   waku dashboard             the browser cockpit → localhost:7777
   waku dashboard --zh        同上，但界面是中文（--zh: Chinese interface）
+  waku dashboard --dev       同上，但显示开发者页面（图谱、运维、数据库…）
   waku connections           list configured integrations and their health
   waku connect google        sign in to Google Calendar (opens your browser)
   waku connect waku-memory   one memory shared with your other agents (opens your browser)
@@ -42,10 +43,12 @@ def main() -> None:
 
         cli_main()
     elif args[0] == "dashboard":
-        # `waku dashboard --zh` → 中文界面。语言在这里定死，之后一路不再变
-        # （为什么不做运行时切换：见 static/js/i18n.js 顶部）。
+        # `waku dashboard --zh` → 中文界面；`--dev` → 显示开发者页面。
+        # 两个开关都在这里定死，之后一路不再变。
         if "--zh" in args[1:]:
             os.environ["WAKU_LANG"] = "zh"
+        if "--dev" in args[1:]:
+            os.environ["WAKU_DEV"] = "1"
         from waku.ops.dashboard import main as dash_main
 
         dash_main()

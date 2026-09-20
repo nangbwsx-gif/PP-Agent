@@ -504,6 +504,16 @@ const VIEWS = {
         </select></label>
       <div style="margin-top:var(--space-3)">${uiButton(t("ui.saveSwitch","Save &amp; switch"), {level: "primary", onclick: "saveSettings()"})}
         <span class="meta" style="margin-left:var(--space-2)">${t("set.rebuilds","rebuilds the agent in-process — no restart")}</span></div>
+    `)}
+    <h2>${t("set.devTitle","Developer mode")}</h2>${uiCard(`
+      <div class="meta" style="margin-bottom:var(--space-2)">${t("set.devIntro","Show the pages that are only useful if you run this yourself: the graph, the loop, ops and tracing, the database and its SQL console, the two races, model setup and connections. Off keeps the sidebar to Overview, Memory, Tools and Behaviour. The page reloads — the sidebar and the current page both change. Your own choice here wins over the --dev flag, so turning it off sticks.")}</div>
+      <label class="fld">${t("set.devLabel","Developer mode")}
+        <select id="set-dev-mode">
+          <option value="" ${!DEV_ON?"selected":""}>${t("ui.off","off")}</option>
+          <option value="1" ${DEV_ON?"selected":""}>${t("ui.on","on")}</option>
+        </select></label>
+      <div style="margin-top:var(--space-3)">${uiButton(t("ui.save","Save"), {level: "primary", onclick: "applyDevMode()"})}
+        <span class="meta" style="margin-left:var(--space-2)">${t("set.devReload","saves and reloads the page")}</span></div>
     `)}`;
   },
   tools(d, sub){

@@ -21,6 +21,7 @@ and **`main.js` loads last** (it runs the bootstrap).
 | file | what lives here |
 |------|-----------------|
 | `i18n.js`    | `t(key, "English")` + the `data-i18n` sweep — the Chinese interface. In English mode it returns the string it was handed and touches no DOM |
+| `mode.js`    | personal-user mode vs developer mode: hides the developer pages from the sidebar and holds the switch in Behaviour. `--dev` opens it, and an explicit choice in the UI beats that flag |
 | `util.js`    | `esc`, markdown renderer, core globals (`D`, `editing`), `postJSON`, `reveal`, `stampSlots` |
 | `theme.js`   | the system / light / dark toggle (`cycleTheme`), stored as `waku-theme` like the Memory console |
 | `memory.js`  | inline Memory / SOUL / skill editing actions |
@@ -56,6 +57,23 @@ Data flows one way: `refresh()` (main.js) fetches `/api/data` into the global
   stop — the whole point is that this reads and runs with nothing installed.
 - **No emojis in UI** (project rule). Known pre-existing exception: the `★`/`☆`
   pin stars in `models.js` (typographic dingbats, not colour emoji) — left as-is.
+
+## Personal-user mode vs developer mode
+
+The sidebar has thirteen pages. Four of them are for someone who runs this
+itself and reads traces; the other nine assume you will edit `.env` and query
+SQLite.
+
+- `waku dashboard` — Overview, Memory, Tools, Behaviour, plus the chat dock.
+- `waku dashboard --dev` — all thirteen.
+- Behaviour carries a switch, kept in `localStorage`, and **it beats `--dev`**:
+  a user who turns the developer pages off does not get them back on the next
+  restart just because the server was started with the flag.
+
+`js/mode.js` owns the page list and that precedence rule.
+`test_dashboard_modes.py` pins the list against the sidebar's `data-v`
+attributes, so a page nobody classified fails the suite instead of quietly
+appearing in the personal-user sidebar.
 
 ## Chinese interface (`waku dashboard --zh`)
 

@@ -8,7 +8,8 @@ targets are aliases for the same things, plus the eval and tracing tools.
 | Command | Does |
 |---|---|
 | `waku` | chat in the terminal |
-| `waku dashboard` | the live cockpit at localhost:7777 |
+| `waku dashboard` | the live cockpit at localhost:7777 — Overview, Memory, Tools, Behaviour |
+| `waku dashboard --dev` | the same, plus the developer pages (graph, loop, ops, database, the two races, model and connection setup) |
 | `waku voice` | talk to it — the "waku waku" wake word, or push-to-talk (needs the `[voice]` extra) |
 | `waku brief` | a morning briefing from calendar + memory, run as a loop |
 | `waku gather` | the same job as a graph: four sources fetched together, then one digest |
