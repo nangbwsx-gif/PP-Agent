@@ -302,7 +302,7 @@ function connectionStatusDisplay(status){
   // installed — it just hasn't been probed. That is not a warning, so it must
   // not wear the amber "needs setup" pill: this state covers most of a working
   // setup on first visit, and colouring it like a problem told every new user
-  // their Telegram, Notion and Tavily needed fixing when they were fine.
+  // their Notion and Tavily needed fixing when they were fine.
   if (state === "configured") return {label:"configured · not tested", className:"configured"};
   if (state === "installed_but_unconfigured") return {label:"needs setup", className:"needs-setup"};
   return {label:"not configured", className:"not-configured"};
@@ -398,8 +398,8 @@ const VIEWS = {
     const items = d.connections || [];
     return items.length ? connectionsGrid(items) : uiCard(`<span class="empty">No integrations registered.</span>`);
   },
-  // Gateway: ONE unified conversation across every channel (dashboard, telegram,
-  // voice, cli) — the same loop + memory answer all of them. Each message is
+  // Gateway: ONE unified conversation across every channel (dashboard, voice,
+  // cli) — the same loop + memory answer all of them. Each message is
   // tagged with where it came in, Hermes-style. You type in the dock on the right.
   // Gateway = an INBOX of conversations (like Slack/Intercom): one row per
   // conversation, tagged with its channel(s). Click one to open it in the chat
@@ -407,7 +407,7 @@ const VIEWS = {
   gateway(d){
     const sessions = d.sessions || [];
     let h = `<div class="meta" style="margin-bottom:var(--space-3)">Every conversation across every channel —
-      web, phone (Telegram), voice, terminal — answered by the same brain. Click one to open it in the
+      web, voice, terminal — answered by the same brain. Click one to open it in the
       chat dock &rarr;. This is the inbox; the dock is the open thread.</div>`;
     if (!sessions.length)
       return h + uiCard(`<span class="empty">no conversations yet — say something in the chat dock &rarr;</span>`);

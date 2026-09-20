@@ -74,7 +74,7 @@ def main(reset_spend: bool = False) -> None:
     conn = connect(home)
 
     # Clear the DB rows IN PLACE — never delete state.db. Deleting the file
-    # would leave any live gateway (a running `make telegram`, the dashboard,
+    # would leave any live gateway (a running voice loop, the dashboard,
     # an open CLI) holding a broken, read-only connection to the old inode.
     for table in ("chat_log", "calendar_events", "facts", "episodes"):
         conn.execute(f"DELETE FROM {table}")   # triggers keep the FTS index in sync

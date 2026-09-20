@@ -23,7 +23,7 @@ Built by [seanchen.io](https://seanchen.io).
 > The system-design whiteboard from the series.
 > Every box maps to a file — see [the architecture](docs/architecture.md).
 
-**▶ [Watch the 20-min code walkthrough](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)** — the loop, the memory pillars, the evals, the Telegram gateway and the "Waku Waku" wake word, live.
+**▶ [Watch the 20-min code walkthrough](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)** — the loop, the memory pillars, the evals, the phone gateway and the "Waku Waku" wake word, live.
 
 **[Waku Memory](https://www.waku.one)** — the same memory in Claude Code, Codex, Grok Bot and this agent: [waku.one](https://www.waku.one) · [docs](https://www.waku.one/docs)
 
@@ -83,7 +83,7 @@ same memory, see [integrations](docs/integrations.md#share-one-memory-with-your-
 
 | Pillar | In one line | Read more |
 |---|---|---|
-| **Harness** | gateways (terminal, dashboard, voice, Telegram, Discord, WhatsApp) and tools around one loop | [architecture](docs/architecture.md) |
+| **Harness** | gateways (terminal, dashboard, voice) and tools around one loop | [architecture](docs/architecture.md) |
 | **Loop** | ~95 lines of plain Python: reason, act, repeat, with two ways to stop | [the tour](docs/tour.md#the-loop) |
 | **Memory** | semantic, episodic and procedural (skills); a gate decides *whether* to remember, consolidation decides *what* to keep | [the tour](docs/tour.md#the-retrieval-gate) |
 | **Eval / LLM-Ops** | deterministic tests and LLM-as-judge side by side, a release gate, a trace for every turn | [evals](docs/evals.md) |
@@ -100,7 +100,7 @@ read and change. Versus the big open-source assistants (OpenClaw, Hermes)? Same 
 | [Getting started](docs/getting-started.md) | installing, the first run, connecting Waku Memory |
 | [The tour](docs/tour.md) | the dashboard, things to try, the loop, graph workflows, skills |
 | [Architecture](docs/architecture.md) | every box on the whiteboard, and the file behind it |
-| [Integrations](docs/integrations.md) | voice, Telegram, calendars, MCP servers, Waku Memory |
+| [Integrations](docs/integrations.md) | voice, calendars, MCP servers, Waku Memory |
 | [Commands](docs/commands.md) | every `waku` and `make` command |
 | [Evals & tracing](docs/evals.md) | the two kinds of eval, the release gate, traces and spend |
 | [Roadmap](docs/roadmap.md) | what is live, what is still a skeleton, upgrade paths |

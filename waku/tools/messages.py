@@ -2,7 +2,7 @@
 
 Local-first: nothing is actually sent. Each message becomes a file in
 .waku/outbox/ that you can read, edit, and send yourself. Wiring a real
-channel (email, Telegram, Slack) is a great community contribution.
+channel (email, Slack, WeChat) is a great community contribution.
 """
 
 from __future__ import annotations

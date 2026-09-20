@@ -425,13 +425,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "text in / text out\n\nCLI \u00b7 Dashboard \u00b7 Voice\nTelegram \u00b7 Discord\n\nwaku/gateway/ + ops/dashboard.py",
+      "text": "text in / text out\n\nCLI \u00b7 Dashboard \u00b7 Voice\n\nwaku/gateway/ + ops/dashboard.py",
       "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "rec-0011",
-      "originalText": "text in / text out\n\nCLI \u00b7 Dashboard \u00b7 Voice\nTelegram \u00b7 Discord\n\nwaku/gateway/ + ops/dashboard.py",
+      "originalText": "text in / text out\n\nCLI \u00b7 Dashboard \u00b7 Voice\n\nwaku/gateway/ + ops/dashboard.py",
       "lineHeight": 1.25
     },
     {

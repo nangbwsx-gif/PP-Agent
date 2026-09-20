@@ -74,8 +74,8 @@ class Settings:
     # Working memory is a SLIDING WINDOW (like context RAM): only the last N
     # turns go into the prompt. Older turns aren't lost — they're in state.db,
     # distilled into facts by consolidation, and pulled back by the retrieval
-    # gate when relevant. Without this cap a long thread (esp. the always-on
-    # Telegram session) resends its whole history every turn until it explodes.
+    # gate when relevant. Without this cap a long thread (esp. an always-on
+    # gateway session) resends its whole history every turn until it explodes.
     history_turns: int = field(default_factory=lambda: int(os.getenv("WAKU_HISTORY_TURNS", "12")))
 
     # --- Memory
@@ -129,13 +129,6 @@ class Settings:
     # the plain loop, so this can never make Waku worse — only faster/cheaper.
     graph_workflows: bool = field(
         default_factory=lambda: os.getenv("WAKU_GRAPH_WORKFLOWS", "") in ("1", "true", "yes")
-    )
-
-    # --- Optional gateway
-    telegram_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
-    whatsapp_token: str = field(default_factory=lambda: os.getenv("WHATSAPP_TOKEN", ""))
-    whatsapp_phone_number_id: str = field(
-        default_factory=lambda: os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
     )
 
     # --- Tracing (JSONL always; OTel exports if an endpoint is set)

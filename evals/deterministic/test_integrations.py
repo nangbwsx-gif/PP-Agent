@@ -23,7 +23,7 @@ def _isolate(monkeypatch, tmp_path):
 
 def test_registry_contract():
     items = integrations.registry()
-    assert len(items) == 24
+    assert len(items) == 21
     assert len({item.key for item in items}) == len(items)
     assert {item.key for item in items if item.group == "AI Providers"} == set(PROVIDERS)
     for item in items:
@@ -437,12 +437,11 @@ def test_configured_is_not_confused_with_needing_setup(monkeypatch, tmp_path):
 
 def test_a_genuinely_missing_required_field_still_says_needs_setup(monkeypatch, tmp_path):
     """The other half: widening the states must not swallow a real problem.
-    Telegram with a token but no allowed-chat id is incomplete, and has to keep
-    saying so."""
+    An integration with more than one required field, with only some of them
+    set, is incomplete and has to keep saying so."""
     _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(integrations, "_extra_installed", lambda name: True)
-    # Notion, not Telegram: Telegram has a single required field, so "half
-    # filled in" is not expressible there and the test would prove nothing.
+    # Notion: it needs 2+ required fields, so "half filled in" is expressible.
     notion = next(i for i in integrations.registry() if i.key == "notion")
     required = [f.name for f in notion.env if f.required]
     assert len(required) > 1, "this test needs an integration with 2+ required fields"

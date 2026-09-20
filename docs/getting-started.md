@@ -51,8 +51,7 @@ waku dashboard          # → http://localhost:7777
 
 `waku` and `waku dashboard` are two doors into the **same** Waku. The dashboard
 is a small web server on your machine (`127.0.0.1`): the browser is the UI, and
-the same process runs every turn. Set `TELEGRAM_BOT_TOKEN` and it starts your
-Telegram bot too.
+the same process runs every turn.
 
 **Check:** send a message from the chat dock and watch the Overview diagram
 light up as it flows through the harness.
@@ -89,5 +88,5 @@ To connect Claude Code, Codex, Hermes or Grok Bot to the same memory, see
 ## Next
 
 - [The tour](tour.md): the dashboard's tabs, things to try, and the loop up close.
-- [Integrations](integrations.md): voice, Telegram, calendars and MCP servers.
+- [Integrations](integrations.md): voice, calendars and MCP servers.
 - [Commands](commands.md): every `waku` and `make` command.

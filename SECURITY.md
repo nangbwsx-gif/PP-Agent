@@ -37,7 +37,7 @@ anonymous.
 
 - Keep `.env` out of git — it's gitignored, and so are `credentials.json` and
   `*token*.json`.
-- Inbound gateways (WhatsApp-style webhooks) must verify request signatures
-  before acting. Outbound ones (Telegram, Discord) dial out and aren't exposed.
+- Inbound gateways (webhook-style) must verify request signatures before
+  acting. Outbound ones dial out instead and aren't exposed.
 - Review a community skill or extension before installing it. A `SKILL.md` is
   instructions to a model that can call tools — read it like code.

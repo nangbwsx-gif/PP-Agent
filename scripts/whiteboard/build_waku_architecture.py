@@ -42,7 +42,7 @@ def build_elements() -> list[dict]:
 
     a(S.pill_header(80, 250, 330, "1  GATEWAYS", color="grey"))
     a(S.labeled_box(80, 320, 330, 210,
-                    "text in / text out\n\nCLI · Dashboard · Voice\nTelegram · Discord\n\nwaku/gateway/ + ops/dashboard.py",
+                    "text in / text out\n\nCLI · Dashboard · Voice\n\nwaku/gateway/ + ops/dashboard.py",
                     color="grey", size=S.FS_BODY))
 
     a(S.labeled_box(490, 355, 230, 130,

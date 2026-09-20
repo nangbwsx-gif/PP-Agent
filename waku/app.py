@@ -43,7 +43,7 @@ class Waku:
                 source: str = "cli", stream: bool = False) -> LoopResult:
         """One full turn: assemble working memory → run the loop → persist.
         `source` tags which gateway the message arrived through (cli / voice /
-        telegram / dashboard), so the unified chat can show its origin.
+        dashboard), so the unified chat can show its origin.
         `stream=True` streams the reply text token by token to the observer.
         Everything that happens is both shown (observer) and recorded (tracer)."""
         # capture the gate + graph decisions as they flow by, so we can persist

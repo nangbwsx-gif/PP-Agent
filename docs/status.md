@@ -6,7 +6,7 @@
 Read this before opening a PR or filing an issue: most of what is already
 known-broken is below, and half of it already has a fix in flight.
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-19
 
 ---
 
@@ -14,11 +14,13 @@ known-broken is below, and half of it already has a fix in flight.
 
 The four pillars run: the loop, memory (semantic + episodic + procedural with
 a retrieval gate), tools, and both eval tiers. `waku`, `waku dashboard`,
-`waku voice`, `waku telegram`, `waku discord`, `waku brief` and
-`waku connect google` all start.
+`waku voice`, `waku brief` and `waku connect google` all start.
 
-**770 deterministic evals pass offline**, with no API key; 60 more are live
-evals that skip without one. CI runs the offline tier on every PR along with
+**725 deterministic evals pass offline**, with no API key; 63 more are live
+evals that skip without one. On Windows 3 of them fail (temp-file and process
+assumptions, not this checkout) and 2 more need `python -X utf8` to read files
+with the locale codec — see Known broken. CI runs the offline tier on every PR
+along with
 ruff, the skills validator, and a check that `.env.example` still matches the
 integrations registry.
 
@@ -39,6 +41,7 @@ Nothing here is a surprise. If you hit one of these, the issue exists.
 | GPT-5.6 tool calls fail on Chat Completions | — | #146 |
 | OpenCode Zen fails with a rate-limit error | #112 | #113 |
 | Google Calendar sign-in has no bundled OAuth client, so `waku connect google` needs your own `.waku/credentials.json` | — | — |
+| On Windows `pytest evals/deterministic` needs `-X utf8`: `test_static_assets.py` and `test_version.py` read files with the locale (GBK) codec. `test_coding_eval.py` (2) and `test_provider_disabled.py` (1) fail on temp-file and subprocess assumptions | `evals/deterministic/` | — |
 
 **Providers are the recurring theme.** Three of the items above are one
 provider or another, and there is no single place that says which providers

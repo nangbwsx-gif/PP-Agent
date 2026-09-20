@@ -29,7 +29,7 @@ async function switchSession(id){
   closeSessMenu();
 }
 // Open a conversation from the Gateway inbox: load it into the dock (the active
-// thread), keep it live-synced (so new Telegram/voice messages appear), and make
+// thread), keep it live-synced (so new voice messages appear), and make
 // sure the dock is visible.
 let liveView = null;   // a conversation opened from the inbox, kept live-updated
 async function openConversation(id){

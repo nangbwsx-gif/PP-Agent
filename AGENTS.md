@@ -37,7 +37,7 @@ caps it at 100 lines, so the detail lives in the files it points to.
    `.env` or keys, and nothing runs at install time. Waku runs on people's own
    machines with their own keys.
 3. **No new default dependency.** The core is stdlib plus the Anthropic and
-   OpenAI clients. Anything else goes behind an extra (`[voice]`, `[telegram]`).
+   OpenAI clients. Anything else goes behind an extra (`[voice]`, `[gcal]`).
 4. **Every behaviour change gets a deterministic eval** in `evals/deterministic/`
    (0/1, offline). A bug fix adds the case that would have caught it.
 5. **Nothing under `waku/` or `evals/` imports from `examples/` or `lab/`,** and

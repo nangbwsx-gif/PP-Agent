@@ -110,7 +110,7 @@ async function postJSON(url, body){ return (await fetch(url,{method:"POST",heade
 // the tag strip changes in two places; change the date format and the meta line
 // changes in two places. That has already happened once in this repo.
 
-// The channel tags on a conversation (web / telegram / voice / cli / discord).
+// The channel tags on a conversation (web / voice / cli).
 const gwTags = s => (s.sources||[]).map(src =>
   `<span class="gwtag ${esc(src)}">${esc(src)}</span>`).join("");
 

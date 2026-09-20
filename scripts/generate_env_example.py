@@ -38,7 +38,9 @@ def main(argv: list[str] | None = None) -> int:
         print("".join(difflib.unified_diff(current.splitlines(True), expected.splitlines(True),
                                             fromfile=str(path), tofile="generated")))
         return 1
-    path.write_text(expected, encoding="utf-8")
+    # newline="\n" on purpose: write_text defaults to os.linesep, so on Windows
+    # this rewrote the whole file to CRLF and every line showed up as changed.
+    path.write_text(expected, encoding="utf-8", newline="\n")
     return 0
 
 

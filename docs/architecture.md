@@ -9,7 +9,6 @@ flowchart TB
     subgraph GW["Gateway Interface — waku/gateway/"]
         CLI["cli.py (default)"]
         VOICE["voice.py (wake word)"]
-        TG["telegram.py · discord.py · whatsapp.py (optional)"]
     end
 
     subgraph RUN["Ephemeral Agent Run — everything here is rebuilt per turn"]
@@ -58,7 +57,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  GW["Gateway<br/>cli · telegram · voice · dashboard"] --> WM["Working memory<br/>SOUL.md + memory + history"]
+  GW["Gateway<br/>cli · voice · dashboard"] --> WM["Working memory<br/>SOUL.md + memory + history"]
   WM --> LLM
   subgraph LOOP["The Loop — loop/agent.py"]
     LLM["LLM"] -->|tool call| TOOLS["Tools<br/>create_event · list_events<br/>search_web · save_note · …"]
@@ -90,9 +89,8 @@ friendly view; the **Data** tab shows the raw `state.db` tables.
 
 ## Which file is which
 
-- `waku/gateway/` — how text gets in and out: `cli.py`, `voice.py` (wake word),
-  `telegram.py`, `discord.py` and `whatsapp.py`, started by `runner.py` and
-  `supervisor.py`. Gateways only move text.
+- `waku/gateway/` — how text gets in and out: `cli.py`, `voice.py` (wake word)
+  and `ops/dashboard.py`. Gateways only move text.
 - `waku/runtime/session.py` — working memory for one turn: SOUL.md, memory
   context and chat history.
 - `waku/loop/agent.py` — the loop. `loop/models.py` — pluggable providers over

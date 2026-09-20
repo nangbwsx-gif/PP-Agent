@@ -28,11 +28,11 @@ class IntegrationState(StrEnum):
     """Where an integration stands, from empty to proven working.
 
     CONFIGURED exists because the other four could not tell two very different
-    situations apart. "Telegram is missing its token" and "Telegram has
+    situations apart. "Notion is missing its token" and "Notion has
     everything and I simply have not probed it yet" both returned
     INSTALLED_BUT_UNCONFIGURED, and the dashboard renders that as "needs
-    setup" — so a working Tavily key, a live Telegram gateway and a connected
-    Notion database all told the user they needed setting up. The health store
+    setup" — so a working Tavily key, a live Google Calendar connection and a
+    connected Notion database all told the user they needed setting up. The health store
     is empty on a fresh checkout, which means EVERY user saw that on their
     first visit, about integrations that were already working.
     """
@@ -128,17 +128,6 @@ class ApplyResult:
     can_force: bool = False
 
 
-def _positive_int(values: dict[str, str]) -> dict[str, str]:
-    value = values.get("DISCORD_MAX_TURNS_PER_HOUR", "")
-    if value:
-        try:
-            if int(value) <= 0:
-                raise ValueError
-        except ValueError:
-            raise ValueError("DISCORD_MAX_TURNS_PER_HOUR must be a positive integer") from None
-    return values
-
-
 def _notion_normalize(values: dict[str, str]) -> dict[str, str]:
     value = values.get("NOTION_EPISODES_DATABASE_ID", "")
     if value:
@@ -155,29 +144,6 @@ def _darwin_tools(env: Mapping[str, str]) -> bool:
 
 
 INTEGRATIONS: tuple[Integration, ...] = (
-    Integration("telegram", "Channels", "Telegram", "Lets Waku receive and send Telegram messages.",
-                (EnvField("TELEGRAM_BOT_TOKEN", "Bot token", required=True, secret=True),
-                 EnvField("TELEGRAM_ALLOWED_USER", "Allowed user")), "telegram", "telegram",
-                "https://t.me/BotFather", ReloadMode.GATEWAY,
-                lambda env: bool(env.get("TELEGRAM_BOT_TOKEN")), None),
-    Integration("discord", "Channels", "Discord", "Lets Waku answer in a Discord server.",
-                (EnvField("DISCORD_BOT_TOKEN", "Bot token", required=True, secret=True),
-                 EnvField("DISCORD_ALLOWED_USER", "Allowed user"),
-                 EnvField("DISCORD_ALLOWED_CHANNEL", "Allowed channel"),
-                 EnvField("DISCORD_REQUIRE_MENTION", "Require mention", FieldKind.BOOL),
-                 EnvField("DISCORD_MAX_TURNS_PER_HOUR", "Max turns per hour"),
-                 EnvField("DISCORD_HOME", "Workspace directory")), "discord", "discord", "",
-                ReloadMode.GATEWAY, lambda env: bool(env.get("DISCORD_BOT_TOKEN")), None,
-                _positive_int),
-    Integration("whatsapp", "Channels", "WhatsApp", "Lets Waku answer WhatsApp messages via the Meta Cloud API.",
-                (EnvField("WHATSAPP_TOKEN", "Access token", required=True, secret=True),
-                 EnvField("WHATSAPP_PHONE_NUMBER_ID", "Phone number ID", required=True),
-                 EnvField("WHATSAPP_APP_SECRET", "App secret", required=True, secret=True),
-                 EnvField("WHATSAPP_VERIFY_TOKEN", "Webhook verify token", required=True, secret=True),
-                 EnvField("WHATSAPP_ALLOWED_PHONE", "Allowed phone",
-                          help="Without '+' prefix. Empty = answer anyone.")),
-                "whatsapp", "httpx", "https://developers.facebook.com/apps",
-                ReloadMode.GATEWAY, lambda env: bool(env.get("WHATSAPP_TOKEN")), None),
     Integration("google_calendar", "Calendar & Productivity", "Google Calendar",
                 "Lets Waku create and update Google Calendar events.",
                 (EnvField("WAKU_GOOGLE_CALENDAR", "Enable Google Calendar", FieldKind.BOOL),

@@ -12,10 +12,10 @@ dist/
 .waku/
 .waku.bak-*/
 .waku.prerename-bak/
-# Any ALTERNATE agent home, not just the default one. DISCORD_HOME gives the
-# bot its own memory (see waku/gateway/discord.py); WAKU_HOME can point anywhere.
-# Without this glob only `.waku/` was covered, so a second home's SOUL.md,
-# usage.jsonl and outbox/ were tracked — the exact files you least want pushed.
+# Any ALTERNATE agent home, not just the default one. WAKU_HOME can point
+# anywhere; without this glob only `.waku/` was covered, so a second home's
+# SOUL.md, usage.jsonl and outbox/ were tracked — the exact files you least
+# want pushed.
 .waku-*/
 .env.prerename-bak
 

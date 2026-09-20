@@ -33,7 +33,7 @@ into four groups.
 | [agent-graphs-design.md](agent-graphs-design.md) | the graph engine's design and its fail-open rule |
 | [memory-backends-playbook.md](memory-backends-playbook.md) | seeing your memories in each provider's own console |
 | [benchmarks.md](benchmarks.md) | what has been measured, and how |
-| [integrations.md](integrations.md) | voice, Telegram, Apple, Google Calendar, MCP, Waku Memory — all opt-in |
+| [integrations.md](integrations.md) | voice, Apple, Google Calendar, MCP, Waku Memory — all opt-in |
 | [commands.md](commands.md) | every `waku` and `make` command |
 | [evals.md](evals.md) | the two kinds of eval, the release gate, traces and spend |
 | [roadmap.md](roadmap.md) | what is live, what is still a skeleton, upgrade paths |

@@ -35,8 +35,7 @@ Good places to add real value:
 - **Providers** (`waku/loop/models.py`): most models expose an OpenAI- or Anthropic-compatible
   endpoint, so a new provider is usually one `PROVIDERS` row — no new wire code. Add a pricing
   row in the dashboard and a case to `evals/deterministic/test_providers.py`.
-- **Gateways** (`waku/gateway/`): receive/send for a new channel (WhatsApp, Discord, Slack,
-  email). Keep it to one file; the CLI gateway is the reference.
+- **Gateways** (`waku/gateway/`): receive/send for a new channel (email, Slack, WeChat,
 - **Memory stores** (`waku/memory/semantic/`): match the `add`/`search` interface of
   `SqliteFactStore`. The Supabase adapter is the reference.
 - **Tools** (`waku/tools/`): a new capability the agent can call. Follow `calendar.py` and the

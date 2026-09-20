@@ -1,6 +1,6 @@
 """DETERMINISTIC EVAL — working memory is a bounded sliding window.
 
-Sean's insight while testing Telegram: its one always-on session accumulated
+Sean's insight while testing an always-on phone session: it accumulated
 history forever, and every turn resent the whole thing (unbounded context ->
 cost/latency climb -> eventual context-limit break). Working memory must be a
 fixed window; older turns live in state.db + consolidation, not the prompt."""

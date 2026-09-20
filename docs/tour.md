@@ -21,7 +21,7 @@ Each tab is one pillar, linked to the real files:
 | Tab | What you see |
 |---|---|
 | **Overview** | cost, latency, the gate skip/retrieve split, the clickable architecture map |
-| **Gateway** | one conversation across every channel, each message tagged by source (dashboard / telegram / voice / cli) |
+| **Gateway** | one conversation across every channel, each message tagged by source (dashboard / voice / cli) |
 | **Loop** | every turn with its gate decision, tool calls, tokens, and cost |
 | **Graph** | graph workflows: the live triage topology (drawn from the engine itself) + which door each turn took |
 | **Memory** | sub-tabs per pillar — semantic facts, episodes, editable skills + SOUL, consolidation |

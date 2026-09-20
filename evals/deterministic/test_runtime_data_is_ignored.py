@@ -7,9 +7,9 @@ outboxes, traces of every turn. None of it belongs in git. This pins the
 missing line is invisible until the day it isn't.
 
 The gap this was written for (2026-07-26): .gitignore listed `.waku/` by exact
-name. When the Discord bot was given its OWN memory via DISCORD_HOME — the fix
-for a bot answering strangers out of the maintainer's personal store — that
-second home was called `.waku-discord/`, matched nothing, and its SOUL.md,
+name. When an agent was given its OWN memory in a second home — one bot
+answering from its own store instead of the maintainer's personal one — that
+home was called `.waku-bot/`, matched nothing, and its SOUL.md,
 usage.jsonl and outbox/ were tracked. A privacy fix had quietly created a
 different privacy hole. `.waku-*/` closes it for any alternate home.
 
@@ -35,12 +35,12 @@ def ignored(rel: str) -> bool:
 
 
 # Every runtime artifact a home can hold, for the DEFAULT home and for an
-# alternate one (DISCORD_HOME, or any WAKU_HOME a user points elsewhere).
+# alternate one (any WAKU_HOME a user points elsewhere).
 ARTIFACTS = ["state.db", "SOUL.md", "usage.jsonl", "calendar.ics",
              "traces/2026-07-26.jsonl", "outbox/msg-1.txt"]
 
 
-@pytest.mark.parametrize("home", [".waku", ".waku-discord", ".waku-demo"])
+@pytest.mark.parametrize("home", [".waku", ".waku-bot", ".waku-demo"])
 @pytest.mark.parametrize("artifact", ARTIFACTS)
 def test_no_agent_home_leaks_its_runtime_data(home, artifact):
     """A second agent home is a normal thing to have — one per gateway, one for

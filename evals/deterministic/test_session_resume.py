@@ -46,13 +46,13 @@ def test_most_recent_of_several_threads_wins(tmp_path, monkeypatch):
 
 
 def test_only_dashboard_source_threads_are_resumed(tmp_path, monkeypatch):
-    """A recent telegram/cli thread must not hijack the dashboard's resume —
+    """A recent phone/cli thread must not hijack the dashboard's resume —
     matched by source, not id."""
     monkeypatch.setenv("WAKU_SESSION_IDLE_MINUTES", "60")
     app = make_waku(tmp_path / "home", client=ScriptedClient([]))
-    _seed(app, "telegram-12345", age_minutes=1, source="telegram")
+    _seed(app, "phone-12345", age_minutes=1, source="phone")
     got = resume_or_new_session(app.conn)
-    assert got.startswith("dashboard-") and got != "telegram-12345"
+    assert got.startswith("dashboard-") and got != "phone-12345"
 
 
 def test_new_chat_s_prefixed_thread_is_resumed(tmp_path, monkeypatch):

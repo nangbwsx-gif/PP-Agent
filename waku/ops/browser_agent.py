@@ -1,6 +1,6 @@
 """The browser gateway's agent — one Waku, shared by every tab.
 
-The dashboard is a gateway like the CLI or Telegram: it only moves text. But
+The dashboard is a gateway like the CLI: it only moves text. But
 unlike those it is multi-threaded (a stdlib ThreadingHTTPServer) and long-lived
 across page refreshes, so it needs two things the other gateways don't:
 

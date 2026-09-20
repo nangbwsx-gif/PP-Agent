@@ -1,7 +1,7 @@
 """CLI gateway — the zero-setup way to talk to your Waku.
 
 The Gateway Interface box: a gateway only moves text in and out; everything
-interesting happens in the loop. The Telegram gateway is the same ~60 lines
+interesting happens in the loop. A phone gateway would be the same ~60 lines
 with polling instead of input().
 """
 

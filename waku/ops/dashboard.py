@@ -11,7 +11,7 @@ One stdlib HTTP server reading the files Waku already writes:
 The overview mirrors the architecture diagram — every box is clickable and
 opens that section's live data. The chat dock is a real gateway: type (or speak)
 a message and watch the same harness (gate, loop, tools, memory) that the CLI/
-voice/telegram gateways drive light up in the browser as it runs.
+the CLI gateway drives light up in the browser as it runs.
 
 The frontend is plain static files (static/index.html + style.css + app.js)
 served as-is — no build step, no framework. This file is just the server + API.
@@ -743,7 +743,7 @@ def session_action(payload: dict) -> dict:
     action = payload.get("action")
     if action == "history":
         # read-only view of a conversation — never touches the agent, so the
-        # dashboard can poll it live (e.g. to show new Telegram messages arrive).
+        # dashboard can poll it live while a turn is being written.
         settings = load_settings()
         settings.ensure_home()
         conn = connect(settings.home)
@@ -868,7 +868,7 @@ def memory_action(payload: dict) -> dict:
 
 def events_since(cursor):
     """New trace events past `cursor` (a line count in today's trace file).
-    Any gateway — browser, CLI, voice, Telegram — appends to this same file,
+    Any gateway — browser, CLI, voice — appends to this same file,
     so the live diagram lights up for all of them. cursor=None returns just
     the current tail so the browser starts fresh instead of replaying history."""
     settings = load_settings()
@@ -1176,31 +1176,8 @@ def main() -> None:
         except OSError:
             print(f"port {port} busy, trying {port + 1}…")
             continue
-        # One owner for gateway lifecycle: configuration saves can now stop and
-        # restart a bot in-process instead of requiring a dashboard restart.
-        from waku.gateway.discord import start_in_background as start_discord
-        from waku.gateway.supervisor import GatewaySupervisor
-        from waku.gateway.telegram import start_in_background as start_telegram
-        from waku.gateway.whatsapp import start_in_background as start_whatsapp
-        from waku.integrations import (
-            INTEGRATIONS,
-            register_gateway_reloader,
-            register_gateway_status_provider,
-        )
-
-        gateway_items = [item for item in INTEGRATIONS if item.reload.value == "gateway"]
-        supervisor = GatewaySupervisor(
-            {"telegram": start_telegram, "discord": start_discord, "whatsapp": start_whatsapp},
-            {item.key: tuple(field.name for field in item.env) for item in gateway_items},
-        )
-        register_gateway_status_provider(supervisor.status)
-        register_gateway_reloader(supervisor.reconcile)
-        supervisor.reconcile()
         print(f"Waku dashboard → http://localhost:{port}  (Ctrl-C to stop)")
-        try:
-            server.serve_forever()
-        finally:
-            supervisor.shutdown()
+        server.serve_forever()
         return
     raise SystemExit(f"no free port in {base}–{base + 9}")
 

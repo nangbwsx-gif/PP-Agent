@@ -40,7 +40,7 @@ ln -sfn $REPO/.env ~/Developer/waku-prs/pr$N/.env
 **replaces a symlinked `.env` with a regular file**. The moment anyone saves a
 setting from a PR worktree's dashboard, that worktree gains a complete copy of
 every key in the real `.env`: Anthropic, OpenAI, Gemini, Moonshot, xAI, Zhipu,
-Tavily, Telegram, Discord.
+Tavily, Notion, MCP.
 
 So: after any test that saved settings, assume the `.env` is a real file and
 **check before deleting the worktree**, then move anything worth keeping into the
@@ -64,7 +64,7 @@ cd ~/Developer/waku-prs/pr$N
 WAKU_DASHBOARD_PORT=7778 $REPO/.venv/bin/python -m waku.ops.dashboard
 ```
 
-Optional extras a PR needs (`[notion]`, `[discord]`, …) install with `uv`, since
+Optional extras a PR needs (`[notion]`, `[voice]`, …) install with `uv`, since
 the venv has no `pip`:
 
 ```bash

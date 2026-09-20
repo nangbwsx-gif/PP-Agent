@@ -1,16 +1,13 @@
 """Entrypoints — installed as the `waku` command (and `python -m waku`):
 
   waku                       chat in the terminal (default)
-  waku dashboard             the browser cockpit → localhost:7777 (+ Telegram if configured)
+  waku dashboard             the browser cockpit → localhost:7777
   waku connections           list configured integrations and their health
   waku connect google        sign in to Google Calendar (opens your browser)
   waku connect waku-memory   one memory shared with your other agents (opens your browser)
   waku mcp                   MCP servers, and which account each knows you as
   waku mcp login <name>      sign in again — as someone else, or after expiry
   waku voice                 talk to it (needs the [voice] extra)
-  waku telegram              phone → laptop (needs TELEGRAM_BOT_TOKEN)
-  waku discord               Discord → laptop (needs DISCORD_BOT_TOKEN)
-  waku whatsapp              WhatsApp → laptop (needs WHATSAPP_TOKEN, public URL)
   waku brief                 morning briefing (calendar + mail + memory) — as a LOOP
   waku gather                same job as a GRAPH: github, web, calendar and
                              memory fetched together, then one digest
@@ -58,18 +55,6 @@ def main() -> None:
         from waku.gateway.voice import main as voice_main
 
         voice_main()
-    elif args[0] == "telegram":
-        from waku.gateway.telegram import main as tg_main
-
-        tg_main()
-    elif args[0] == "discord":
-        from waku.gateway.discord import main as discord_main
-
-        discord_main()
-    elif args[0] == "whatsapp":
-        from waku.gateway.whatsapp import main as wa_main
-
-        wa_main()
     elif args[0] == "brief":
         from waku.ops.brief import main as brief_main
 

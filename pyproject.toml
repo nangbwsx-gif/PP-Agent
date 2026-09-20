@@ -50,10 +50,6 @@ tracing = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp>=1.27",
 ]
-# Optional gateway: message your laptop from your phone
-telegram = [
-    "python-telegram-bot>=21.0",
-]
 # Optional write-through target for create_event; the local SQLite/ICS mock
 # remains the default and source of truth.
 gcal = [
@@ -64,14 +60,6 @@ gcal = [
     # The browser consent flow. Without it the only way in is `gcloud auth
     # application-default login`, which is a developer ritual, not a sign-in.
     "google-auth-oauthlib>=1.0",
-]
-# Optional gateway: message Waku from Discord
-discord = [
-    "discord.py>=2.4",
-]
-# Optional gateway: WhatsApp via Meta Cloud API (needs a public URL — see docstring)
-whatsapp = [
-    "httpx>=0.25",
 ]
 # Optional gateway: talk to your laptop. TTS uses macOS `say` by default;
 # for the neural British voice: pip install kokoro soundfile (pulls torch).

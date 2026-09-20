@@ -38,17 +38,6 @@ uv pip install '.[voice-neural]'          # neural Kokoro (bm_george); pulls tor
 
 Override either engine with `WAKU_VOICE` (a `say` voice name, or a Kokoro voice like `bf_emma`).
 
-## Phone to laptop
-
-```bash
-pip install -e '.[telegram]'
-# message @BotFather, /newbot, put the token in .env, then:
-make telegram
-```
-
-Text your bot from anywhere and your laptop runs the turn — long-polling, so no
-public URL or webhook. Set `TELEGRAM_ALLOWED_USER` to lock it to just you.
-
 ## Brief me on my week (Apple Calendar + Mail)
 
 ```bash
