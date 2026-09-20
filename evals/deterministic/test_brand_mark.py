@@ -10,6 +10,8 @@ next time the bird is redrawn, and these tests are what catches it.
 import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 MASTER = ROOT / "waku" / "ops" / "static" / "waku-mark.svg"
 VARIANTS = {
@@ -45,8 +47,16 @@ def test_each_variant_states_its_ink_outright():
         )
 
 
-def test_the_readme_offers_both_inks():
+def test_the_readme_offers_both_inks_if_it_shows_a_mark():
+    """如果 README 放了 logo，就必须同时提供浅色和深色两份 —— GitHub 不给
+    <img> 读页面主题的机会，只有 <picture> 能切换，所以只放一份的话，总有
+    一种主题下它会变成一片透明。
+
+    不放 logo 也是允许的（这个 README 就没放），那就没什么要保证的。
+    """
     readme = (ROOT / "README.md").read_text()
+    if "docs/brand/" not in readme:
+        pytest.skip("this README shows no brand mark")
     assert 'media="(prefers-color-scheme: dark)"' in readme
     for name in VARIANTS:
         assert f"docs/brand/{name}" in readme, f"README never references {name}"

@@ -1,129 +1,166 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/waku-mark-on-dark.svg">
-  <img src="docs/brand/waku-mark-on-light.svg" alt="Waku" width="76" align="right">
-</picture>
+# PP-Agent
 
-# waku-agent
+部署在你自己电脑上的本地 AI 助手。手机或电脑随时对话，日程、记事和长期记忆全部留在本机，不经过任何云服务。
 
-**Your own AI assistant. On your laptop. In code you can read in an afternoon.**
+- **本地优先** — 所有状态都在一个 SQLite 文件里（`.waku/state.db`），可以自己打开、备份、删除
+- **长期记忆** — 不是每次对话都从零开始。它记住你说过的事，需要时自己翻出来
+- **模型不锁定** — 支持 11 家模型供应商，用哪个自己定，改一行配置就能换
+- **中文界面** — 网页控制台提供中英双语，工具说明也是中文
 
-Meet **Waku** — a local-first personal assistant that shows the four pillars behind every
-serious agent: **Harness · Loop · Memory · Eval/LLM-Ops**. No frameworks hiding the good parts.
-Built by [seanchen.io](https://seanchen.io).
+---
 
-- **Local-first.** Your memory is one SQLite file. Open it. Read it. It's yours.
-- **Memory is the hero.** Semantic + episodic + procedural — with a gate that decides *whether*
-  to remember, and a pass that decides *what* to keep.
-- **The loop is ~95 lines** of plain Python. Step through it.
-- **Watch it think.** A local dashboard lights up every message as it flows through the harness.
-- **Eval built in.** Deterministic tests *and* LLM-as-judge, side by side, with a release gate.
+## 环境要求
 
-![waku-agent architecture — the whiteboard](docs/architecture-whiteboard.png)
+- Python **3.11 或更高**
+- 一个模型供应商的 API Key（推荐 DeepSeek，便宜且中文好）
+- Windows / macOS / Linux 都可以
 
-> The system-design whiteboard from the series.
-> Every box maps to a file — see [the architecture](docs/architecture.md).
+---
 
-**▶ [Watch the 20-min code walkthrough](https://www.youtube.com/watch?v=rvRyBhILrls&list=PLE9hy4A7ZTmpGq7GHf5tgGFWh2277AeDR&index=42)** — the loop, the memory pillars, the evals, the phone gateway and the "Waku Waku" wake word, live.
+## 安装
 
-**[Waku Memory](https://www.waku.one)** — the same memory in Claude Code, Codex, Grok Bot and this agent: [waku.one](https://www.waku.one) · [docs](https://www.waku.one/docs)
-
-[YouTube](https://www.youtube.com/@SeanAIStories) · [X](https://x.com/ShenSeanChen) · [LinkedIn](https://linkedin.com/in/shen-sean-chen) · [Instagram](https://www.instagram.com/sean_ai_stories) · [TikTok](https://www.tiktok.com/@sean_ai_stories) · [Discord](https://discord.gg/ebbdvSCXqu) ·
-[哔哩哔哩](https://space.bilibili.com/479332937) · [小红书](https://www.xiaohongshu.com/user/profile/5cf02cfb0000000005014371) · [抖音](https://www.douyin.com/user/MS4wLjABAAAAWCkd62_e8q4n-S34LIL04HsYN3m03l8MFdVYZToojP8)
-
-### [Buy me a coffee](https://buy.stripe.com/5kA176bA895ggog4gh) — it keeps this repo (and the videos) coming
-
-## Quickstart
-
-Just want to run it:
+### 1. 拿到代码并建虚拟环境
 
 ```bash
-pip install waku-agent
-waku                                    # talk to your Waku in the terminal
-waku dashboard                          # …or the browser cockpit → localhost:7777
+git clone https://github.com/nangbwsx-gif/PP-Agent.git
+cd PP-Agent
+
+# 方式一：用 uv（推荐，快很多）
+uv venv
+uv pip install -e .
+
+# 方式二：用内置 venv + pip
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS / Linux
+pip install -e .
 ```
 
-It will tell you which key to set the first time. Want to **read the code** (the
-point of this repo) or contribute — clone it instead:
+### 2. 配置模型
 
-```bash
-git clone https://github.com/ShenSeanChen/waku-agent && cd waku-agent
-uv venv && uv pip install -e .          # create the env + install the `waku` command
-cp .env.example .env                    # pick a provider, paste ONE key
-uv run waku                             # talk to your Waku in the terminal
-uv run waku dashboard                   # …or the browser cockpit → localhost:7777
+在**项目根目录**新建 `.env` 文件（这个文件不会进版本库）：
+
+```ini
+WAKU_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的key
+
+# 可选：指定模型。不写就用供应商默认值
+WAKU_MODEL=deepseek-v4-pro        # 主模型：真正回答你的那个
+WAKU_SMALL_MODEL=deepseek-flash   # 打杂模型：判断要不要翻记忆、提炼事实
 ```
 
-**Now try it.** *"Remember that Alex prefers morning meetings."* Quit. Restart.
-*"Book a catch-up with Alex on Friday."* → it remembers, and books 9am. Your memory is one
-file: `.waku/state.db`.
+**支持的供应商**（把 `WAKU_PROVIDER` 换成对应名字，并填上它的 Key）：
 
-**Use the model you already pay for.** Anthropic (default), OpenAI, Gemini, DeepSeek, MiniMax,
-Kimi, GLM, OpenRouter (one key, hundreds of hosted models), OpenCode Zen, or OpenCode Go —
-set `WAKU_PROVIDER=`, paste the key, done. One dialect in the loop;
-a [~60-line adapter](waku/loop/models.py) handles the rest.
-
-New to it? **[Getting started](docs/getting-started.md)** walks the whole setup, with a check
-at the end of every step.
-
-## Connect Waku Memory
-
-Waku's own memory is local. **[Waku Memory](https://www.waku.one)** is the hosted memory you
-share across agents: save something in Claude Code, recall it here.
-
-```bash
-pip install 'waku-agent[mcp]'           # in a checkout: uv pip install -e '.[mcp]'
-waku connect waku-memory                # or /connect waku-memory in the dashboard chat
-waku skill export --to claude,codex     # carry Waku's skills to Claude Code and Codex too
-```
-
-Your browser opens once to sign in. To connect Claude Code, Codex, Hermes or Grok Bot to the
-same memory, see [integrations](docs/integrations.md#share-one-memory-with-your-other-agents-waku-memory).
-
-## What's inside
-
-| Pillar | In one line | Read more |
+| 供应商 | `WAKU_PROVIDER` | Key 变量名 |
 |---|---|---|
-| **Harness** | gateways (terminal, dashboard, voice) and tools around one loop | [architecture](docs/architecture.md) |
-| **Loop** | ~95 lines of plain Python: reason, act, repeat, with two ways to stop | [the tour](docs/tour.md#the-loop) |
-| **Memory** | semantic, episodic and procedural (skills); a gate decides *whether* to remember, consolidation decides *what* to keep | [the tour](docs/tour.md#the-retrieval-gate) |
-| **Eval / LLM-Ops** | deterministic tests and LLM-as-judge side by side, a release gate, a trace for every turn | [evals](docs/evals.md) |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` |
+| Kimi（月之暗面） | `kimi` | `MOONSHOT_API_KEY` |
+| 智谱 GLM | `glm` | `ZHIPU_API_KEY` |
+| MiniMax | `minimax` | `MINIMAX_API_KEY` |
+| xAI Grok | `xai` | `XAI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| OpenCode Zen / Go | `opencode_zen` / `opencode_go` | `OPENCODE_ZEN_API_KEY` / `OPENCODE_GO_API_KEY` |
 
-**How is this different from ChatGPT or Claude Desktop?** Those are products you *use*. This is a
-codebase you *own*: the loop, the memory schema, the gate and the eval harness are all yours to
-read and change. Versus the big open-source assistants (OpenClaw, Hermes)? Same architecture,
-1/100th the code.
+配置文件里所有可调项都写在 `.env.example` 里，每一条都有注释。
 
-## Docs
+### 3. 跑起来
 
-| Read | For |
+```bash
+# 终端对话
+.venv\Scripts\python.exe -m waku
+
+# 网页控制台（中文）
+.venv\Scripts\python.exe -m waku dashboard --zh
+```
+
+浏览器打开 **http://localhost:7777**。
+
+> Windows 上没有 `make`，所以上面都直接用 `python -m`。macOS / Linux 可以用仓库里 Makefile 的简写，比如 `make run`、`make dashboard`。
+
+---
+
+## 使用
+
+| 命令 | 做什么 |
 |---|---|
-| [Getting started](docs/getting-started.md) | installing, the first run, connecting Waku Memory |
-| [The tour](docs/tour.md) | the dashboard, things to try, the loop, graph workflows, skills |
-| [Architecture](docs/architecture.md) | every box on the whiteboard, and the file behind it |
-| [Integrations](docs/integrations.md) | voice, calendars, MCP servers, Waku Memory |
-| [Commands](docs/commands.md) | every `waku` and `make` command |
-| [Evals & tracing](docs/evals.md) | the two kinds of eval, the release gate, traces and spend |
-| [Roadmap](docs/roadmap.md) | what is live, what is still a skeleton, upgrade paths |
-| [Whiteboards](docs/README.md#whiteboards) | the editable system-design charts from the videos |
-| [lab/](lab/README.md) | Waku meets other agents and models: the video experiments |
-| [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) | the rules, and how to send a PR |
+| `python -m waku` | 终端里对话 |
+| `python -m waku dashboard --zh` | 中文网页控制台 → localhost:7777 |
+| `python -m waku dashboard --zh --dev` | 同上，额外显示开发者页面（图谱、运维、数据库等） |
+| `python -m waku voice` | 语音对话（需要先装 `[voice]` 依赖） |
+| `python -m waku brief` | 生成一份晨间摘要（日历 + 记忆），可挂到系统计划任务 |
+| `python -m waku gather` | 并行扫描 GitHub／网页／日历／记忆，汇总成一份摘要 |
+| `python -m waku connections` | 查看所有集成的配置状态和健康情况 |
 
-## Community
+### 界面说明
 
-Star the repo, join the [Discord](https://discord.gg/ebbdvSCXqu), and grab a
-[good first issue](https://github.com/ShenSeanChen/waku-agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-— that link is the live list, so it's always current. Gateways, memory backends and
-community skills are all shaped to be first PRs; the easiest needs no Python at all
-(see [contributing a skill](CONTRIBUTING.md)).
+- 默认（用户模式）只显示 4 个页面：**总览、记忆、工具、行为**
+- `--dev` 展开全部 13 个页面，包含图谱、循环、运维、数据库、模型配置等
+- 也可以在**行为**页里用开关切换开发者模式（界面上切换的优先级高于启动参数）
+- 右侧聊天面板在任何页面都能用
 
-**Comment on an issue before you start** and it gets assigned to you, so two people
-never build the same thing.
+### 它会做什么
 
-## Also from me
+装好就有 8 个工具可用：
 
-- **[launch-mvp-stripe-nextjs-supabase](https://github.com/ShenSeanChen/launch-mvp-stripe-nextjs-supabase)** — NextJS + Supabase + Stripe, everything you need to ship a SaaS.
-- **[AutoManus.io](https://automanus.io)** — my AI startup: a sales lead manager for made-to-order products. It embeds where conversations already happen (WhatsApp, email, web chat) to capture inbound, automate follow-ups and kill CRM busywork. Pre-seed backed by Character VC. ([AutoManus Discord](https://discord.gg/SxXATg9rSK))
+- **日程** — 建日程、查日程（本地日历，接上 Google Calendar 后可同步）
+- **记事** — 把值得记住的事写进长期记忆
+- **消息** — 起草消息到本地发件箱，你自己过目后再发
+- **联网** — 搜网页（默认走 DuckDuckGo，配了 Tavily key 效果更好）
+- **自我管理** — 修正/遗忘记忆、保存行为规则、自己写新技能
 
-Code is MIT — see [LICENSE](LICENSE). The Waku name, mark and design system belong to
-AutoManus Technologies, Inc. and are not MIT — see [LICENSE-BRAND](LICENSE-BRAND). Built by [@ShenSeanChen](https://github.com/ShenSeanChen)
-([YouTube](https://www.youtube.com/@SeanAIStories) · [X](https://x.com/ShenSeanChen)).
+---
+
+## 数据存在哪
+
+所有运行时数据都在项目下的 `.waku/` 目录，**已加入 `.gitignore`，不会被提交**：
+
+```
+.waku/
+├── state.db      记忆、对话记录、日程（一个 SQLite 文件）
+├── SOUL.md       人格文件，改它就改变了它的性格
+├── MEMORY.md     人能直接读的记忆摘要（自动生成）
+├── skills/       你教给它的技能
+├── traces/       每轮对话的结构化日志
+├── usage.jsonl   每次调用的 token 与费用账本
+└── outbox/       起草的消息和摘要
+```
+
+想换位置就设 `WAKU_HOME` 环境变量。
+
+---
+
+## 测试
+
+```bash
+.venv\Scripts\python.exe -m pytest -q evals/deterministic    # 705 个离线用例，不需要 Key
+.venv\Scripts\python.exe -m ruff check waku evals scripts    # 代码检查
+```
+
+> Windows 上有 3 个用例会失败（系统临时文件与子进程相关的上游问题），另有 2 个文件需要 `-X utf8` 才能读 GBK 环境下的文本。详见 `docs/status.md`。
+
+---
+
+## 项目结构
+
+```
+waku/
+├── gateway/     文本的进出（终端、语音、网页控制台）
+├── loop/        Agent 主循环：想 → 调工具 → 看结果 → 再想
+├── graph/       可选的结构化工作流（形状固定的任务）
+├── memory/      三层记忆：语义 / 情节 / 程序性 + 检索决策 + 自动提炼
+├── runtime/     每一轮的工作记忆组装
+├── tools/       它能调用的工具
+├── ops/         可观测性、评测、网页控制台
+└── config.py    所有可调项（读 .env）
+```
+
+更深入的说明看 `docs/`：`architecture.md`（架构）、`getting-started.md`（上手指南）、`evals.md`（评测与追踪）。
+
+---
+
+## 许可
+
+代码采用 MIT 许可，见 [LICENSE](LICENSE)。仓库内自带的字体为 SIL OFL 1.1 许可。
