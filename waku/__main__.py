@@ -9,7 +9,7 @@
   waku mcp                   MCP servers, and which account each knows you as
   waku mcp login <name>      sign in again — as someone else, or after expiry
   waku voice                 talk to it (needs the [voice] extra)
-  waku brief                 morning briefing (calendar + mail + memory) — as a LOOP
+  waku brief                 morning briefing (calendar + memory) — as a LOOP
   waku gather                same job as a GRAPH: github, web, calendar and
                              memory fetched together, then one digest
   waku skill install <url>   install a community skill
