@@ -88,11 +88,25 @@ before changing how anything looks.
 
 ## Verifying a change (no JS test runner exists)
 
-Frontend logic is not unit-tested; verify in the browser preview:
-`make dashboard` (or the preview tool) → hard-reload `localhost:7777` → click the
-sidebar tabs and the chat dock → check the console shows **zero errors**. The
-Python side (`dashboard.py` endpoints, `_thread_history`, pins, session resume)
-*is* covered by `evals/deterministic/`.
+Three checks stand between a frontend edit and a blank page, in increasing order
+of what they can see:
+
+1. `node --check` — syntax. Run by `test_static_js_parses.py` over `js/` **and**
+   `lang/`. Catches an unterminated string or a broken template literal.
+2. `test_static_js_parses.py`'s shadowing guard — a local variable named `t`
+   turns every `t("key","English")` call in that scope into a TypeError. Valid
+   syntax, blank view.
+3. `test_dashboard_renders.py` — **actually calls every view** with a fixture
+   shaped like `/api/data`, via `evals/fixtures/dashboard_render_smoke.js`. This
+   is the only one that catches a view that runs and throws: the server reports
+   nothing, the console is the only witness, and the page is simply empty.
+
+Beyond those, verify in the browser preview:
+`waku dashboard` → hard-reload `localhost:7777` → click the sidebar tabs and the
+chat dock → check the console shows **zero errors**.
+
+The Python side (`dashboard.py` endpoints, `_thread_history`, pins, session
+resume) *is* covered by `evals/deterministic/`.
 
 **A running server does not pick up Python changes.** Static files here (`.js`,
 `.css`, `index.html`) are read from disk on every request, so a hard-reload shows

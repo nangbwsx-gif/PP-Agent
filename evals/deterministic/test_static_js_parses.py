@@ -24,6 +24,7 @@ should still get a green suite, and CI has it.
 from __future__ import annotations
 
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -54,4 +55,31 @@ def test_every_dashboard_script_parses(script: pathlib.Path):
     assert result.returncode == 0, (
         f"{script.name} does not parse — the dashboard will render nothing.\n"
         f"{result.stderr.strip()}"
+    )
+
+
+def test_no_local_variable_shadows_the_translation_function():
+    """A local variable named `t` takes out the whole view.
+
+    t(key, "English") is a global. Declare a local `t` in the same scope —
+    `const t = d.tools` in the Tools view, `function dbTable(t)` — and every
+    t(...) call in that scope becomes a TypeError on a non-function, so the
+    view renders nothing and the only clue is in the browser console. That is
+    exactly how the Tools and Database pages went down on 2026-09-19.
+
+    A text check, deliberately: node --check sees valid syntax here, and the
+    bug only exists at runtime.
+    """
+    offenders = []
+    for script in SCRIPTS:
+        lines = script.read_text(encoding="utf-8").split("\n")
+        for i, line in enumerate(lines):
+            if not re.search(r"\b(?:const|let|var)\s+t\s*=", line):
+                continue
+            scope = "\n".join(lines[i:i + 30])
+            if re.search(r'[^\w.$]t\("', scope):
+                offenders.append(f"{script.name}:{i + 1}  {line.strip()[:60]}")
+    assert not offenders, (
+        "a local `t` shadows the global t() translator, so every t() call in "
+        "that scope throws and the whole view goes blank:\n  " + "\n  ".join(offenders)
     )

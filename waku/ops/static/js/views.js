@@ -12,14 +12,16 @@ function subtabBar(view, tabs, active){
 
 // A raw SQLite table, scrollable, with the column names AS the sticky headers
 // so the schema lines up over its data instead of floating above it.
-function dbTable(t){
-  if (!t.sample.length) return uiCard(`<span class="empty">empty — no rows yet</span>`);
-  const cols = t.columns.map(c => `${esc(c)}${
-    t.types&&t.types[c]?`<small>${esc(t.types[c].toLowerCase())}</small>`:""}`);
-  const rows = t.sample.map(r => t.columns.map(c =>
+// 参数叫 table 不叫 t：函数体里要调全局的 t() 做翻译，参数一旦叫 t 就把它遮蔽掉。
+// Tools 和 Database 两个页面曾经因为这件事整个崩掉（t 变成了对象，一调用就 TypeError）。
+function dbTable(table){
+  if (!table.sample.length) return uiCard(`<span class="empty">${t("db.emptyTable","empty — no rows yet")}</span>`);
+  const cols = table.columns.map(c => `${esc(c)}${
+    table.types&&table.types[c]?`<small>${esc(table.types[c].toLowerCase())}</small>`:""}`);
+  const rows = table.sample.map(r => table.columns.map(c =>
     `<span class="dbcell">${esc(String(r[c]??"").slice(0,120))}</span>`));
   return `<div class="scrolly">${uiTable(cols, rows)}</div>
-    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${t("db.showingRange","showing {n} of {total} rows (newest first)").replace("{n}",t.sample.length).replace("{total}",t.count)}</div>`;
+    <div class="meta" style="margin-top:calc(var(--spacing) * 1.5)">${t("db.showingRange","showing {n} of {total} rows (newest first)").replace("{n}",table.sample.length).replace("{total}",table.count)}</div>`;
 }
 const DB_DESC = {  // 每张表的说明，见 t() 的第二个参数
   calendar_events: t("db.desc.calendar","events the create_event tool wrote (the flagship task)"),
@@ -160,8 +162,9 @@ function toolsResults(d){
 }
 // Tools ▸ MCP: external connectors. Shows live status + a copy-paste config so
 // anyone can plug in their own server (scalable, not a one-off).
-function toolsMCP(t){
-  const m = t.mcp;
+// 参数叫 tools 不叫 t：见 dbTable 上方的说明。
+function toolsMCP(tools){
+  const m = tools.mcp;
   let h = uiNotice(m.live ? "ok" : "note", `<b>Model Context Protocol${m.live?t("mcp.connected"," — connected"):m.configured?t("mcp.configured"," — configured"):t("mcp.notSetUp"," — not set up")}.</b>
     <div class="r">MCP lets Waku borrow tools from any external server (files, GitHub, a database, …),
     namespaced <code>&lt;server&gt;_&lt;tool&gt;</code>. ${m.configured
@@ -259,7 +262,11 @@ async function saveProvider(provider){
 }
 function stProvider(){ return (D.settings || {}).provider || "anthropic"; }
 
-const CONNECTION_GROUPS = [t("conn.group.channels","Channels"), t("conn.group.productivity","Productivity"), t("conn.group.memory","Memory"), t("conn.group.tools","Tools")];
+// 内部 key 保持英文：connectionDisplayGroup 返回的就是这些词，分组靠它们对上。
+// 中文只出现在渲染时的标题里（conn.group.* 那几条译文）。
+// 曾经把这里的元素也换成了 t()，结果 grouped["Channels"] 变成 undefined，
+// Connections 页面整页崩 —— t() 是给人看的，不是给代码对 key 用的。
+const CONNECTION_GROUPS = ["Channels", "Productivity", "Memory", "Tools"];
 // "Memory", not "Storage". The registry already calls this group "Memory &
 // Storage"; the display map was dropping the half that says what these
 // actually are. Notion is the episodic store, Supabase the semantic one, and
@@ -316,7 +323,7 @@ function connectionsGrid(items){
   const grouped = Object.fromEntries(CONNECTION_GROUPS.map(group => [group, []]));
   items.forEach(item => grouped[connectionDisplayGroup(item)].push(item));
   return CONNECTION_GROUPS.map(group => `<section class="connsection">
-    <h2>${group}</h2>
+    <h2>${t("conn.group." + group.toLowerCase(), group)}</h2>
     <div class="provgrid conngrid">${grouped[group].map(connectionCard).join("")}</div>
   </section>`).join("");
 }
@@ -505,20 +512,20 @@ const VIEWS = {
     `)}`;
   },
   tools(d, sub){
-    const t = d.tools || {catalog:[], mcp:{configured:false,servers:[],live:false}};
+    const tools = d.tools || {catalog:[], mcp:{configured:false,servers:[],live:false}};
     sub = sub || "available";
-    const tabs = [["available",t("tab.available","Available"),t.catalog.length],["results",t("tab.results","Results")],
-      ["mcp",t("tab.mcp","MCP"),t.mcp.servers.length||null]];
+    const tabs = [["available",t("tab.available","Available"),tools.catalog.length],["results",t("tab.results","Results")],
+      ["mcp",t("tab.mcp","MCP"),tools.mcp.servers.length||null]];
     let h = subtabBar("tools", tabs, sub);
     if (sub === "results") return h + toolsResults(d);
-    if (sub === "mcp") return h + toolsMCP(t);
+    if (sub === "mcp") return h + toolsMCP(tools);
     // Available: what the agent CAN do (grouped by origin), not just what it did.
     h += `<div class="meta" style="margin-bottom:var(--space-3)">${t("tools.availableIntro","The capabilities the agent can call this turn. A tool is a name + description the model reads, a JSON schema, and a Python function — that's it. Connect more via MCP.")}</div>`;
     const SRC = [["flagship",t("tool.src.flagship","Flagship task — scheduling")],["web",t("tool.src.web","Web search")],
       ["self-management",t("tool.src.self","Self-management — it edits its own memory")],
       ["mcp",t("tool.src.mcp","MCP servers")],["other",t("tool.src.other","Other")]];
     SRC.forEach(([key,label]) => {
-      const items = t.catalog.filter(c => c.source === key);
+      const items = tools.catalog.filter(c => c.source === key);
       if (!items.length) return;
       h += `<h2>${label}</h2>`;
       h += items.map(c => uiCard(`
@@ -526,9 +533,9 @@ const VIEWS = {
         <div class="td">${esc(c.description)}</div>`, {cls: "toolcard", size: "sm"})).join("");
     });
     // Roadmap: whiteboard boxes not wired in yet — set expectations, don't over-promise.
-    if ((t.planned||[]).length){
+    if ((tools.planned||[]).length){
       h += `<h2>${t("tools.comingSoon","Coming soon ")}<span class="meta" style="font-weight:400">· ${t("tools.comingSoonSub","on the architecture chart, not wired in yet (opt in with WAKU_EXPERIMENTAL=1)")}</span></h2>`;
-      h += t.planned.map(p => uiCard(`
+      h += tools.planned.map(p => uiCard(`
         <div class="tn"><code>${esc(p.name)}</code> ${uiBadge(`soon · ${esc(p.box)}`)}</div>
         <div class="td">${esc(p.description)}</div>`, {cls: "toolcard toolcard-soon", size: "sm"})).join("");
     }
@@ -547,13 +554,11 @@ const VIEWS = {
     let h = subtabBar("database", tabs, sub);
     if (sub === "query") return h + dbQueryView();
     if (sub !== "overview"){
-      const t = tables.find(x => x.name === sub);
-      if (!t) return h + uiCard(`<span class="empty">no such table</span>`);
-      const notionNote = (t.name === "episodes" && d.episodes_source === "notion")
-        ? `<div class="meta" style="margin-bottom:var(--space-2)">Episodes currently live in Notion — see
-            ${uiLink(t("ui.memoryEpisodic","Memory ▸ Episodic"), "#memory/episodic")}.
-            The rows below are the old local copy in state.db.</div>` : "";
-      return h + notionNote + `<div class="meta" style="margin-bottom:var(--space-2)">${DB_DESC[t.name]||""}</div>` + dbTable(t);
+      const table = tables.find(x => x.name === sub);
+      if (!table) return h + uiCard(`<span class="empty">${t("ui.empty.noTable","no such table")}</span>`);
+      const notionNote = (table.name === "episodes" && d.episodes_source === "notion")
+        ? `<div class="meta" style="margin-bottom:var(--space-2)">${t("db.notionNote","Episodes currently live in Notion — see Memory ▸ Episodic. The rows below are the old local copy in state.db.")}</div>` : "";
+      return h + notionNote + `<div class="meta" style="margin-bottom:var(--space-2)">${DB_DESC[table.name]||""}</div>` + dbTable(table);
     }
     const kb = (db.size/1024).toFixed(1);
     h += uiNotice("note", `<b>Database vs Memory.</b> <span class="r">This is the raw persistence layer — the literal SQLite

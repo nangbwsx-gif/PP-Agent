@@ -61,12 +61,14 @@ def test_connection_display_groups_stay_in_product_order():
     Supabase the semantic one, and every hosted memory service that joins them
     is semantic too — none of it is generic storage.
 
-    Since the Chinese interface landed, the group names go through t(), so this
-    asserts the ORDER rather than a literal — which is what the test was always
-    pinning: the reading order of the page."""
+    Since the Chinese interface landed, the group names may be wrapped in t(),
+    so this reads the quoted names out of the array in order instead of matching
+    a literal — the order is what the test was always pinning. The names
+    themselves must stay English: connectionDisplayGroup returns these exact
+    words and the grouping is a lookup by them."""
     block = re.search(r"const CONNECTION_GROUPS = \[(.*?)\];", JS_SRC, re.DOTALL)
     assert block, "CONNECTION_GROUPS disappeared from the frontend"
-    names = re.findall(r't\("conn\.group\.\w+",\s*"([^"]+)"\)', block.group(1))
+    names = re.findall(r'"([A-Z][A-Za-z]*)"', block.group(1))
     assert names == ["Channels", "Productivity", "Memory", "Tools"], names
 
 
