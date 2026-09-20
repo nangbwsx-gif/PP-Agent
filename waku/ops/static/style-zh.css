@@ -1,0 +1,31 @@
+/* 中文界面的排版覆盖 —— 只在 `waku dashboard --zh` 时由服务端加进 <head>。
+   这里只放"中文需要、英文不需要"的规则，不重复 style.css 的任何东西。
+   英文模式不加载这个文件，所以它不可能影响英文版。 */
+
+:root{
+  /* Instrument Sans 里没有中文字形。不换字体的话，Windows 会用宋体去接
+     中文，字重和 Instrument Sans 差得远，中英混排一眼就看出来是拼的。
+     中文黑体排在前面，拉丁字形仍由 Instrument Sans 提供 —— 浏览器逐字回退，
+     所以"记忆"是雅黑、"Memory"还是 Instrument Sans。 */
+  --face-sans:"PingFang SC","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",
+              var(--font-instrument-sans),sans-serif;
+  /* 等宽链里的中文同理：不加兜底就会掉到 monospace 默认的宋体。
+     注意 JetBrains Mono 仍是第一位，所以 Token / MCP / state.db 这些
+     保留英文的词，字形一点没变。 */
+  --face-mono:var(--font-jetbrains-mono),"JetBrains Mono",ui-monospace,SFMono-Regular,
+              "Microsoft YaHei","PingFang SC",monospace;
+  --face-display:var(--face-sans);
+}
+
+/* 中文没有大小写，uppercase 唯一的作用是把夹在中文里的专有名词全大写
+   （"Token" 变成 "TOKEN"）。约定是专有名词保持原样，所以这两个纯中文的
+   标题位置关掉它。保留 uppercase 的元素（.srcpill / .gwtag / .msg .who）
+   内容本来就是英文，不动。 */
+.r-grp,h2{text-transform:none;letter-spacing:0.04em}
+
+/* 中文字形比拉丁字母占的高度大，同样的 line-height 会显得挤。 */
+body{line-height:1.7}
+.meta,.sub,.td,.lbl,.item,.row{line-height:1.65}
+
+/* 聊天输入框的中文占位符比 "Message Waku…" 长，给一点余量。 */
+.chatbar input{letter-spacing:0}

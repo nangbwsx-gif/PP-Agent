@@ -14,11 +14,13 @@ files to change the UI; edit `dashboard.py` to change the server/API.
 ## The files (`js/`), in load order
 
 They are **classic scripts sharing one global scope** — a `function`/`let`/`const`
-in one file is visible to all the others. Order matters only in that **`main.js`
-runs the bootstrap and must load last**.
+in one file is visible to all the others. Order matters at both ends:
+**`i18n.js` must load first** (it defines `t()`, which the rest of the app calls)
+and **`main.js` loads last** (it runs the bootstrap).
 
 | file | what lives here |
 |------|-----------------|
+| `i18n.js`    | `t(key, "English")` + the `data-i18n` sweep — the Chinese interface. In English mode it returns the string it was handed and touches no DOM |
 | `util.js`    | `esc`, markdown renderer, core globals (`D`, `editing`), `postJSON`, `reveal`, `stampSlots` |
 | `theme.js`   | the system / light / dark toggle (`cycleTheme`), stored as `waku-theme` like the Memory console |
 | `memory.js`  | inline Memory / SOUL / skill editing actions |
@@ -54,6 +56,29 @@ Data flows one way: `refresh()` (main.js) fetches `/api/data` into the global
   stop — the whole point is that this reads and runs with nothing installed.
 - **No emojis in UI** (project rule). Known pre-existing exception: the `★`/`☆`
   pin stars in `models.js` (typographic dingbats, not colour emoji) — left as-is.
+
+## Chinese interface (`waku dashboard --zh`)
+
+The UI ships in English; Chinese is an **overlay, not a fork**. Nothing here is
+machine-translated, at build time or at runtime.
+
+- `lang/zh.js` — the translations: one object, written by hand.
+- `js/i18n.js` — `t(key, "English")`. The **English sentence stays in the code**
+  as the fallback, so a missing key shows the English line — never a blank, never
+  a bare key name. In English mode `t()` returns that fallback and the file does
+  not touch the DOM, so the English path cannot break.
+- `style-zh.css` — the two things Chinese needs and English does not: a CJK font
+  stack (Instrument Sans has no Chinese glyphs, so Windows would fall back to a
+  serif) and no `text-transform:uppercase` on the Chinese headings (it would turn
+  the retained English nouns into "TOKEN").
+
+`dashboard.py` injects those two tags only when `WAKU_LANG=zh`, which is what
+`waku dashboard --zh` sets. The language is fixed at startup on purpose: a
+runtime switcher would have to re-render every view, dialog and in-flight
+animation, and that is a state machine nobody asked for.
+
+Proper nouns stay English — Token, Prompt, Provider, MCP, Skill, Agent, Trace,
+Loop, Gateway, JSONL, SQLite, Dashboard. That rule is at the top of `lang/zh.js`.
 
 ## Design system
 

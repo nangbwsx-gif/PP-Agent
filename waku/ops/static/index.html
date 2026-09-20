@@ -11,8 +11,8 @@
 <link rel="stylesheet" href="/static/style.css"></head><body>
 <nav id="nav" class="rail">
   <div class="r-top"><i class="mark" aria-hidden="true"></i><span class="r-name">WAKU</span>
-    <button id="nav-collapse" class="r-chev" aria-label="Collapse the sidebar" aria-expanded="true">&#8249;</button></div>
-  <div class="r-grp">System</div>
+    <button id="nav-collapse" class="r-chev" aria-label="Collapse the sidebar" data-i18n-aria="nav.aria.collapse" aria-expanded="true">&#8249;</button></div>
+  <div class="r-grp" data-i18n="nav.group.system">System</div>
   <a href="#overview" data-v="overview" data-short="O" aria-label="Overview"><span class="lbl">Overview</span></a>
   <a href="#gateway" data-v="gateway" data-short="G" aria-label="Gateway"><span class="lbl">Gateway</span><span class="n" id="n-gw"></span></a>
   <a href="#loop" data-v="loop" data-short="L" aria-label="Loop"><span class="lbl">Loop</span><span class="n" id="n-loop"></span></a>
@@ -29,10 +29,10 @@
        scores them. "race" carries that difference in one syllable, and hiding
        a whole half of the page behind a sub-tab cost more than the repetition
        ever did. -->
-  <div class="r-grp">Arena</div>
+  <div class="r-grp" data-i18n="nav.group.arena">Arena</div>
   <a href="#compare/models" data-v="compare" data-sub="models" data-short="M" aria-label="Model race"><span class="lbl">Model race</span></a>
   <a href="#compare/memory" data-v="compare" data-sub="memory" data-short="M" aria-label="Memory race"><span class="lbl">Memory race</span></a>
-  <div class="r-grp">Setup</div>
+  <div class="r-grp" data-i18n="nav.group.setup">Setup</div>
   <a href="#models" data-v="models" data-short="M" aria-label="Models"><span class="lbl">Models</span></a>
   <a href="#connections" data-v="connections" data-short="C" aria-label="Connections"><span class="lbl">Connections</span></a>
   <a href="#settings" data-v="settings" data-short="B" aria-label="Behaviour"><span class="lbl">Behaviour</span></a>
@@ -48,30 +48,31 @@
   </header>
   <div id="view"></div>
 </main>
-<div class="resizer" id="dock-resizer" title="Drag to resize chat"></div>
+<div class="resizer" id="dock-resizer" title="Drag to resize chat" data-i18n-title="dock.dragResize"></div>
 <aside id="dock">
   <div class="dockhead">
-    <span class="dt">Chat</span>
+    <span class="dt" data-i18n="dock.title">Chat</span>
     <span class="arch-status"></span>
-    <button id="dock-close" title="Collapse chat">&rsaquo;</button>
+    <button id="dock-close" title="Collapse chat" data-i18n-title="dock.collapse">&rsaquo;</button>
   </div>
   <div class="sesshead" style="padding:8px 2px 0">
-    <button class="btn btn-secondary btn-sm sessbtn" onclick="newChat()">+ New chat</button>
-    <button class="btn btn-secondary btn-sm sessbtn" onclick="toggleSessMenu(event)">History &#9662;</button>
-    <button class="btn btn-secondary btn-sm sessbtn teletoggle" id="teletoggle" onclick="toggleTele()" title="Show/hide per-turn stats: gate decision, seconds, iterations, tools">stats</button>
-    <button class="modelchip" id="modelchip" onclick="toggleModelMenu(event)" title="Switch the model for this chat">&hellip;</button>
+    <button class="btn btn-secondary btn-sm sessbtn" onclick="newChat()" data-i18n="dock.newChat">+ New chat</button>
+    <button class="btn btn-secondary btn-sm sessbtn" onclick="toggleSessMenu(event)" data-i18n="dock.history">History &#9662;</button>
+    <button class="btn btn-secondary btn-sm sessbtn teletoggle" id="teletoggle" onclick="toggleTele()" title="Show/hide per-turn stats: gate decision, seconds, iterations, tools" data-i18n-title="dock.statsTitle">stats</button>
+    <button class="modelchip" id="modelchip" onclick="toggleModelMenu(event)" title="Switch the model for this chat" data-i18n-title="dock.modelChip">&hellip;</button>
   </div>
   <div class="chatlog" id="docklog"></div>
   <div class="chatbar">
-    <input id="dmsg" placeholder="Message Waku&hellip;" autocomplete="off">
-    <button id="mic" class="btn btn-secondary" title="Click to talk — local Whisper, no cloud"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
-    <button id="dsend" class="btn btn-primary">Send</button>
+    <input id="dmsg" placeholder="Message Waku&hellip;" data-i18n-placeholder="dock.placeholder" autocomplete="off">
+    <button id="mic" class="btn btn-secondary" title="Click to talk — local Whisper, no cloud" data-i18n-title="dock.mic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+    <button id="dsend" class="btn btn-primary" data-i18n="dock.send">Send</button>
   </div>
 </aside>
-<button id="dock-reopen" class="btn btn-primary" title="Open chat">&lsaquo; Chat</button>
+<button id="dock-reopen" class="btn btn-primary" title="Open chat" data-i18n-title="dock.open" data-i18n="dock.reopen">&lsaquo; Chat</button>
 <!-- Frontend is split into focused classic scripts sharing one global scope
      (no build step, no modules). Order matters only in that main.js runs the
      bootstrap and must load LAST. See static/README.md for the file map. -->
+<script src="/static/js/i18n.js"></script>
 <script src="/static/js/util.js"></script>
 <script src="/static/js/theme.js"></script>
 <script src="/static/js/ui.js"></script>

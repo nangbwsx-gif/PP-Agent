@@ -888,6 +888,28 @@ def events_since(cursor):
 STATIC_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml",
                 ".html": "text/html; charset=utf-8", ".woff2": "font/woff2"}
 
+# 中文界面的额外资源。只在中文模式注入 —— 英文模式的 HTML 与加语言层之前
+# 逐字节相同，所以那条路径不可能被改坏（见 static/js/i18n.js 的说明）。
+ZH_HEAD = (
+    '<script>window.WAKU_LANG="zh"</script>\n'
+    '<script src="/static/lang/zh.js"></script>\n'
+    '<link rel="stylesheet" href="/static/style-zh.css">\n'
+)
+
+
+def interface_lang() -> str:
+    """'zh' 只在明确要求时才是 zh；其余一切都保持英文。"""
+    return "zh" if os.getenv("WAKU_LANG", "").strip().lower().startswith("zh") else "en"
+
+
+def index_html() -> bytes:
+    """dashboard 的外壳页面，用启动时的语言。"""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    if interface_lang() == "zh":
+        html = html.replace("<html>", '<html lang="zh">', 1)
+        html = html.replace("</head>", ZH_HEAD + "</head>", 1)
+    return html.encode("utf-8")
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, body: bytes, ctype: str, *, no_cache: bool = False) -> None:
@@ -981,7 +1003,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/static/"):
             self._serve_static(self.path)
         else:
-            self._send((STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            self._send(index_html(), "text/html; charset=utf-8")
 
     def _serve_static(self, path: str) -> None:  # the frontend files
         name = path.split("/static/", 1)[1].split("?")[0]

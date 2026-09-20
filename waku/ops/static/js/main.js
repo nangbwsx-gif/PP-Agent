@@ -8,17 +8,19 @@ let activeView = null, activeSub = null;
 // moved: after the Connections registry took keys, providers and integrations
 // out of that page, what remained was two switches that change how a turn runs,
 // which is a behaviour, not a setting.
-const TITLES = {chat:"Chat & watch", ops:"LLM Ops",
-                graph:"Graph workflows — structure around the loop",
+// 页面标题。t(key, 英文原文) —— 英文模式下 t() 原样返回第二个参数，
+// 所以这里的行为和加语言层之前完全一样。
+const TITLES = {chat:t("title.chat", "Chat & watch"), ops:t("title.ops", "LLM Ops"),
+                graph:t("title.graph", "Graph workflows — structure around the loop"),
                 // Keyed by view AND sub for the Arena, now that the sidebar
                 // names the two races separately. A single title covering both
                 // was right while they hid behind sub-tabs; with two nav rows
                 // it reads as a page that does not know which one you clicked.
-                compare:"Arena — race models and memory through the same loop",
-                "compare/models":"Model race — ten brains, one harness",
-                "compare/memory":"Memory race — one brain, five places to put facts",
-                settings:"Behaviour — how a turn runs",
-                database:"Database — everything Waku stores (state.db)"};
+                compare:t("title.compare", "Arena — race models and memory through the same loop"),
+                "compare/models":t("title.compare.models", "Model race — ten brains, one harness"),
+                "compare/memory":t("title.compare.memory", "Memory race — one brain, five places to put facts"),
+                settings:t("title.settings", "Behaviour — how a turn runs"),
+                database:t("title.database", "Database — everything Waku stores (state.db)")};
 function render(){
   if (!D) return;
   const [v, subRaw] = (location.hash||"#overview").slice(1).split("/");
@@ -65,7 +67,8 @@ function tickLive(){
   if (!D) return;
   const ago = Math.round((Date.now()-lastFetch)/1000);
   document.getElementById("sub").innerHTML =
-    `<span class="live"><span class="dot"></span>live</span> · updated ${ago}s ago · ${esc(D.home)}`;
+    `<span class="live"><span class="dot"></span>${t("live.live","live")}</span> · ` +
+    `${t("live.updated","updated {n}s ago").replace("{n}", ago)} · ${esc(D.home)}`;
 }
 let dockRestored = false;
 async function restoreDock(){
@@ -136,7 +139,8 @@ function wireChrome(){
   if (btn) btn.onclick = () => {
     const c = rail.classList.toggle("collapsed");
     btn.setAttribute("aria-expanded", String(!c));
-    btn.setAttribute("aria-label", c ? "Expand the sidebar" : "Collapse the sidebar");
+    btn.setAttribute("aria-label", c ? t("nav.aria.expand", "Expand the sidebar")
+                                       : t("nav.aria.collapse", "Collapse the sidebar"));
     btn.innerHTML = c ? "&#8250;" : "&#8249;";
     // collapsed, the letter alone is on screen, so the name goes in the tooltip
     rail.querySelectorAll(":scope > a").forEach(a => { a.title = c ? a.getAttribute("aria-label") : ""; });
@@ -151,7 +155,7 @@ function wireChrome(){
 // ("transcription failed [Errno …]"). WAV is trivially decodable server-side.
 let micCtx = null, micStream = null, micNode = null, micBuf = [], micOn = false;
 const micHint = (msg) => { const i = document.getElementById("dmsg");
-  if (i){ i.placeholder = msg; setTimeout(()=>{ i.placeholder = "Message Waku…"; }, 8000); } };
+  if (i){ i.placeholder = msg; setTimeout(()=>{ i.placeholder = t("dock.placeholder", "Message Waku…"); }, 8000); } };
 
 async function toggleMic(){
   const btn = document.getElementById("mic");
