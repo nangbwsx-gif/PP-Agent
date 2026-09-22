@@ -242,6 +242,50 @@ def test_the_env_still_wins_for_its_own_provider(monkeypatch):
     assert settings.small_model == "claude-haiku-4-5-20251001"
 
 
+def test_a_provider_keeps_its_model_when_another_provider_shares_the_family(monkeypatch):
+    """回归：家族前缀被多家共享时，自家的模型不能被当成"别人的"丢掉。
+
+    deepseek / opencode_zen / opencode_go 的默认模型都是 deepseek-*（后两家
+    代理的就是 deepseek），家族表里最后写入的赢 —— opencode_go 把 "deepseek"
+    这个 family 抢走了。于是 WAKU_MODEL=deepseek-flash 被静默清空、回落到
+    deepseek-v4-pro：配置写了等于没写，而且不报错、不提示。
+
+    上面那些用例全用 anthropic，而 claude 只此一家，所以整片测试都没碰到
+    这个组合。
+    """
+    from waku.config import Settings
+    from waku.loop.models import get_client
+
+    monkeypatch.setenv("WAKU_PROVIDER", "deepseek")
+    monkeypatch.setenv("WAKU_MODEL", "deepseek-flash")
+    monkeypatch.setenv("WAKU_SMALL_MODEL", "deepseek-flash")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    settings = Settings(provider="deepseek")
+    get_client(settings)
+
+    assert settings.model == "deepseek-flash", (
+        "deepseek 自己的模型被当成了别人的，静默换成默认值"
+    )
+    assert settings.small_model == "deepseek-flash"
+
+
+def test_the_shared_family_guard_still_drops_a_real_foreign_model(monkeypatch):
+    """修好上面那个不等于把规则放宽：别的 provider 的 deepseek 模型配给 kimi，
+    仍然要拦住（kimi 的家族是 kimi，不是 deepseek）。"""
+    from waku.config import Settings
+    from waku.loop.models import get_client
+
+    monkeypatch.setenv("WAKU_PROVIDER", "deepseek")
+    monkeypatch.setenv("WAKU_MODEL", "deepseek-flash")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "test-key")
+
+    settings = Settings(provider="kimi")
+    get_client(settings)
+
+    assert settings.model == "kimi-k3", "deepseek 的模型漏到了 kimi"
+
+
 def test_a_foreign_gate_model_is_dropped_even_when_the_env_names_the_provider(monkeypatch):
     """The case that was actually live in Sean's .env: WAKU_PROVIDER=xai with
     WAKU_SMALL_MODEL still holding anthropic's gate model. Scoping by "did the

@@ -227,9 +227,22 @@ def _belongs_elsewhere(model: str, provider_name: str) -> bool:
     added since — and silently downgrade a deliberate choice. This only fires
     when the family is one some OTHER provider actually owns, which is the case
     that produces a 400 rather than a surprise.
+
+    先检查"是不是自己的家族"，这一步不能省：家族前缀会被多家共享，而下面
+    那个字典推导后写的赢。opencode_zen / opencode_go 代理的就是 deepseek 的
+    模型，它们的 model 也是 deepseek-*，于是 opencode_go 抢走了 "deepseek"
+    这个 family —— deepseek 自己的 WAKU_MODEL=deepseek-flash 被当成外来模型
+    清空，静默回落到 provider 默认值。配置写了等于没写，而且完全不报错。
+
+    代价：同一家族里认错（把 opencode 的 deepseek-v4-flash-free 配给 deepseek）
+    拦不住 —— 纯前缀本来就区分不了。宁可放过一个会 400 的写法，也不要静默
+    丢掉用户明确选定的模型。
     """
     family = model.split("-")[0].lower()
     if "/" in model or not family:
+        return False
+    provider = PROVIDERS.get(provider_name)
+    if provider is not None and family in _families(provider):
         return False
     owner = {f: name for name, p in PROVIDERS.items() if "/" not in (p.model or "x")
              for f in _families(p)}.get(family)
