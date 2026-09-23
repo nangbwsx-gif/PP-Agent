@@ -142,6 +142,18 @@ if (!/[\u4e00-\u9fff]/.test(sample)) {
   failed++;
 }
 
+// 状态标签必须用**原始状态值**（"connected"），不能是翻译后的文字。
+// 真实事故：批量翻译把 "connected" 无差别包成 t(...)，于是
+// state === t(...) 永远不成立（拿中文“已连接”去比英文状态值），所有卡片
+// 掉到兜底分支显示“未配置”，连状态圆点的 CSS 类都变成了中文。
+// 而服务端数据一直是对的，所以只能靠渲染结果才能发现。
+const connHtml = VIEWS.connections(DATA);
+if (!/class="connstatus connected"/.test(connHtml)) {
+  console.log("\nFAIL  a connected integration did not render the raw `connected` class "
+            + "— is a translated string being used as a state value or a CSS class?");
+  failed++;
+}
+
 if (failed) {
   console.log(`\n${failed} view(s) failed`);
   process.exit(1);

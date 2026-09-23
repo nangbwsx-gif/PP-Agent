@@ -83,3 +83,39 @@ def test_no_local_variable_shadows_the_translation_function():
         "a local `t` shadows the global t() translator, so every t() call in "
         "that scope throws and the whole view goes blank:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_translated_text_is_never_used_as_an_identifier():
+    """t() 只翻译给人看的文字。一旦它出现在比较条件、CSS 类名或查找键的位置，
+    功能就断了 —— 而且从中文界面上看不出原因，因为显示出来的文字恰好是对的。
+
+    真实事故：批量翻译把 "connected" 无差别包成 t(...)，于是
+
+        state === t("conn.state.connected", "connected")     // 拿中文"已连接"比英文状态值
+        className: t("conn.state.connected", "connected")    // CSS 类名变成了中文
+
+    第一行让所有连接卡片掉到兜底分支、统统显示"未配置"；第二行让状态圆点失去
+    颜色。服务端数据一直是对的，所以只有看渲染结果才看得出来。
+
+    这是文本检查，和遮蔽检测同样的道理：语法完全合法，问题只在运行时。
+    """
+    forbidden = {
+        r"={2,3}\s*t\(": "比较条件",
+        r"className:\s*t\(": "CSS 类名",
+        # 用作索引：something[t(...)]。不能写成 `\[\s*t\(` —— 那会误报所有
+        # 数组字面量，而 uiTable([t("tbl.subject",...), ...]) 里的译文正是
+        # 该翻的表头文字。
+        r"[\w\)\]]\s*\[\s*t\(": "对象索引",
+        r"case\s+t\(": "switch 分支",
+        r"class=\"\$\{t\(": "HTML class 属性",
+    }
+    offenders = []
+    for script in SCRIPTS:
+        src = script.read_text(encoding="utf-8")
+        for pattern, why in forbidden.items():
+            for match in re.finditer(pattern, src):
+                line = src[:match.start()].count("\n") + 1
+                offenders.append(f"{script.name}:{line}  把 t() 用作了{why}")
+    assert not offenders, (
+        "译文只能出现在给人看的位置，不能当标识符用：\n  " + "\n  ".join(offenders)
+    )

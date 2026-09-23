@@ -285,12 +285,17 @@ function connectionDisplayGroup(item){
 }
 
 function connectionStatusDisplay(status){
+  // 比较用的是原始状态值，className 是 CSS 类名 —— 两者都不能过 t()。
+  // 这个坑踩过一次：批量翻译时把 "connected" 无差别包成了 t(...)，结果
+  // state 永远不等于翻译后的“已连接”，所有卡片都掉到兜底分支显示“未配置”，
+  // 而且 CSS 类变成中文、状态圆点的颜色也一起没了。
+  // 只有给人看的 label 该翻译。
   const state = (status && status.state) || "not_configured";
-  if (state === t("conn.state.connected","connected")) return {label:t("conn.state.connected","connected"), className:t("conn.state.connected","connected")};
-  if (state === t("conn.state.error","error")) return {label:t("conn.state.error","error"), className:t("conn.state.error","error")};
+  if (state === "connected") return {label: t("conn.state.connected", "connected"), className: "connected"};
+  if (state === "error") return {label: t("conn.state.error", "error"), className: "error"};
   // "configured" means every required field is filled and the extra is
   // installed — it just hasn't been probed. That is not a warning, so it must
-  // not wear the amber t("conn.state.needsSetup","needs setup") pill: this state covers most of a working
+  // not wear the amber "needs setup" pill: this state covers most of a working
   // setup on first visit, and colouring it like a problem told every new user
   // their Notion and Tavily needed fixing when they were fine.
   if (state === "configured") return {label:t("conn.state.configured","configured · not tested"), className:"configured"};
@@ -301,13 +306,13 @@ function connectionStatusDisplay(status){
 function connectionCard(item){
   const display = connectionStatusDisplay(item.status);
   const action = item.status && item.status.state !== "not_configured" ? "Edit" : "Configure";
-  // Say WHY on the card. t("conn.state.needsSetup","needs setup") covers two unrelated fixes — a missing
+  // Say WHY on the card. "needs setup" covers two unrelated fixes — a missing
   // value ("missing NOTION_TOKEN") and a missing package ("missing notion
   // extra", which wants a pip install, not a key) — and the reason used to be
   // hidden until you opened the modal. The message repeats the label for
   // connected/configured, so only show it where it adds something.
   const why = (item.status && item.status.message
-    && (item.status.state === "installed_but_unconfigured" || item.status.state === t("conn.state.error","error")))
+    && (item.status.state === "installed_but_unconfigured" || item.status.state === "error"))
     ? `<div class="connwhy">${esc(item.status.message)}</div>` : "";
   return uiCard(`
     <img class="provlogo connlogo" src="/static/logos/connections/${esc(item.key)}.svg" alt="">
