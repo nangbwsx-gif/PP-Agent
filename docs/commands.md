@@ -43,11 +43,21 @@ browser and WeChat share one Waku through the host, one turn at a time.
 
 ```bash
 pip install -e '.[wechat]'   # only needed for the terminal QR
-waku wechat login            # scan, then confirm on the phone
-# then set WAKU_WECHAT=1 in .env and restart `waku serve`
-waku wechat status           # enabled? logged in? cursor? interrupted messages?
+waku wechat login            # scan, confirm on the phone, then paste the two
+                             # .env lines it prints
+# then, in .env:
+#   WAKU_WECHAT=1
+#   WAKU_WECHAT_ALLOW=<the userId login just printed>
+waku wechat status           # allowlist? logged in? cursor? undelivered replies?
 waku wechat logout           # forget the credentials, keep the dedup record
 ```
+
+**The allowlist is mandatory and fails closed.** An inbound message is checked
+against `WAKU_WECHAT_ALLOW` **before anything can reach the host**, so `login`
+prints the line but deliberately does not write it: silently editing a security
+setting is worse than pasting one line. With the list empty, `status` says so and
+nobody can talk to the bot. Unauthorised senders are counted and listed in
+`status` so you can see who knocked; they get no reply.
 
 What it does and does not do:
 
@@ -58,15 +68,45 @@ What it does and does not do:
   inbound message, and the protocol has no "open a conversation" call.
 - A turn's **final** reply is sent, once. Nothing streamed and nothing partial
   reaches WeChat.
+- A message with **no `message_id`** is refused outright rather than handled.
+  Without an id there is nothing to deduplicate on, so every re-delivery would
+  run the turn — and its tools — again.
 - Off by default. With `WAKU_WECHAT` unset, `waku serve` starts the dashboard and
   nothing else; with it set but not logged in, the dashboard still starts and
   `status` says so. A WeChat problem never takes the browser down.
-- Credentials and the cursor live in `.waku/wechat/`, which `.gitignore` covers.
+- Credentials, the cursor and the pending replies live in `.waku/wechat/`, which
+  `.gitignore` covers.
 
-If a turn is interrupted between being accepted and being answered, the message
-is **not** retried (a retry could repeat a tool's side effects) and
-`waku wechat status` lists it as interrupted rather than hiding it. The ordering
-that makes this true is written out at the top of `waku/gateway/wechat.py`.
+### What the delivery guarantees actually are
+
+Stated plainly, because two of these are deliberate choices and one is a
+protocol limit:
+
+- **A turn runs at most once per message.** The id is claimed before the turn,
+  so a re-delivery is a no-op. A crash *between* the claim and the reply leaves
+  that one message unanswered: it is listed as `interrupted`, and it is **not**
+  retried, because a retry could repeat a side-effecting tool call.
+- **A reply is delivered at least once.** Failed sends go to a persistent outbox
+  in `.waku/wechat/outbox.json` and are retried on the next flush and on the next
+  start — never by re-running the turn. A retry whose first attempt actually
+  landed sends the sentence twice, and that is the trade: a duplicate sentence
+  beats a missing one or a doubled calendar event.
+- **Chunks are confirmed individually.** Each chunk of a long reply is recorded
+  as sent on its own, and each reuses a stable `client_id` derived from
+  `(message_id, chunk index)`, so a retry is the same message to the server
+  rather than a new one.
+- **"Sent" means the API accepted it.** WeChat gives no delivery receipt, so
+  nothing here proves the person saw it.
+- **Not verified against the real API:** whether the server actually deduplicates
+  on `client_id`. The lab never tested that, and if it does not, a retry that had
+  in fact been delivered shows up twice. The outbox is what keeps that window
+  small.
+- **A reply whose `context_token` has gone stale cannot be delivered at all.** It
+  stays in the outbox — visible in `status`, with its attempt count — because the
+  protocol offers no way to re-open a conversation from this side.
+
+What the ordering guarantees are, and why, is written out at the top of
+`waku/gateway/wechat.py`.
 
 ## make
 

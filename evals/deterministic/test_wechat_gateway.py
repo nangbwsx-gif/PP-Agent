@@ -21,7 +21,10 @@ import json
 import threading
 import time
 
+import pytest
+
 from evals.helpers import FakeAgent
+from waku.config import Settings
 from waku.gateway import wechat
 from waku.runtime.host import Host
 
@@ -70,7 +73,8 @@ class FakeILink:
         self.batches = list(batches or [])
         self.send_failures = send_failures
         self.qr_statuses = list(qr_statuses or [])
-        self.sent = []                 # every post_message payload
+        self.sent = []                 # every post_message payload that SUCCEEDED
+        self.posts = []                # every attempt, failures included
         self.cursors_seen = []         # every cursor passed to fetch_updates
         self.exhausted = threading.Event()
 
@@ -96,6 +100,7 @@ class FakeILink:
         return {"msgs": [], "get_updates_buf": cursor, "ret": 0}
 
     def post_message(self, base_url, token, message):
+        self.posts.append(message)     # record failures too: retries are the point
         if self.send_failures > 0:
             self.send_failures -= 1
             raise wechat.ApiError("sendmessage failed", status=500, code=500)
@@ -111,7 +116,8 @@ def make_gateway(tmp_path, api, host=None):
     state = wechat.GatewayState(tmp_path / "wechat")
     state.save_credentials({"token": "bot-token", "baseUrl": wechat.BASE_URL,
                             "accountId": "bot@im.bot", "userId": USER})
-    return wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0)
+    return wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                 send_retry_seconds=0.0)
 
 
 def batch(*messages, cursor="cursor-1"):
@@ -126,7 +132,7 @@ def test_without_credentials_it_does_not_poll_and_does_not_error(tmp_path):
     nothing for the host to report (which would otherwise look like a broken
     dashboard)."""
     api = FakeILink([batch(user_text())])
-    gateway = wechat.WeChatGateway(wechat.GatewayState(tmp_path / "wechat"), api)
+    gateway = wechat.WeChatGateway(wechat.GatewayState(tmp_path / "wechat"), api, allowed=[USER])
 
     with Host(build=lambda: FakeAgent(), gateways=[gateway]) as host:
         assert not host.gateway_error("wechat")
@@ -263,22 +269,73 @@ def test_a_long_reply_is_chunked_and_each_chunk_carries_the_context(tmp_path):
 # ------------------------------------------------------------- send failure
 
 
-def test_a_send_failure_does_not_run_the_turn_again(tmp_path):
+def test_a_transient_send_failure_is_retried_without_rerunning_the_turn(tmp_path):
     """Re-sending is safe (worst case a duplicate reply). Re-running the turn is
-    not, because tools have side effects. So the send retries and the turn does
-    not, and the message is still marked handled."""
+    not, because tools have side effects. So the send retries, the turn does not,
+    and a later flush delivers what the first attempt could not."""
     api = FakeILink([batch(user_text("m1", "book it"))], send_failures=wechat.SEND_ATTEMPTS)
     agent = FakeAgent()
     gateway = make_gateway(tmp_path, api)
 
     with Host(build=lambda: agent) as host:
         gateway.start(host)
-        _wait_for(lambda: gateway.status()["failed"] >= 1)
+        _wait_for(lambda: len(api.sent) == 1)      # a later flush got it out
         gateway.stop()
 
     assert [text for _sid, text, _src in agent.responded] == ["book it"], "the turn ran twice"
-    assert api.sent == []
-    assert gateway.status()["unfinished"] == [], "a send failure is not an unfinished turn"
+    assert gateway.status()["pending"] == [], "a delivered reply was left in the outbox"
+
+
+def test_an_undeliverable_reply_is_persisted_and_never_re_runs_the_turn(tmp_path):
+    """The acceptance point: a send failure is reported as a failure, survives a
+    restart, and does not cost a second turn."""
+    api = FakeILink([batch(user_text("m1", "book it"))], send_failures=999)
+    agent = FakeAgent()
+    gateway = make_gateway(tmp_path, api)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        _wait_for(lambda: gateway.status()["pending"])
+        gateway.stop()
+
+    assert api.sent == [], "a failed send was reported as delivered"
+    assert [t for _s, t, _src in agent.responded] == ["book it"], "the turn ran twice"
+    pending = gateway.status()["pending"]
+    assert len(pending) == 1
+    assert pending[0]["messageId"] == "m1"
+    assert pending[0]["sentChunks"] == 0
+    assert pending[0]["attempts"] >= 1
+    # And it is on disk, which is what makes the next start able to finish it.
+    on_disk = json.loads((tmp_path / "wechat" / "outbox.json").read_text())
+    assert on_disk["entries"][0]["messageId"] == "m1"
+
+
+def test_a_later_run_delivers_the_backlog_without_running_any_turn(tmp_path):
+    """Restart recovery for delivery: the reply a previous run could not send goes
+    out, and the agent is not asked to produce it again."""
+    api_one = FakeILink([batch(user_text("m1", "book it"))], send_failures=999)
+    agent_one = FakeAgent()
+    gateway_one = make_gateway(tmp_path, api_one)
+    with Host(build=lambda: agent_one) as host:
+        gateway_one.start(host)
+        _wait_for(lambda: gateway_one.status()["pending"])
+        gateway_one.stop()
+    assert api_one.sent == []
+
+    # A fresh process over the same state directory, this time with a working send.
+    api_two = FakeILink([])
+    agent_two = FakeAgent()
+    gateway_two = make_gateway(tmp_path, api_two)
+    with Host(build=lambda: agent_two) as host:
+        gateway_two.start(host)
+        _wait_for(lambda: len(api_two.sent) == 1)
+        gateway_two.stop()
+
+    assert [t for _s, t, _src in agent_two.responded] == [], (
+        "the backlog was delivered by re-running the turn"
+    )
+    assert api_two.sent_texts() == ["agent:book it"]
+    assert gateway_two.status()["pending"] == []
 
 
 # ----------------------------------------------------------- restart recovery
@@ -322,7 +379,8 @@ def test_a_turn_interrupted_by_a_crash_is_reported_not_retried(tmp_path):
     state.seen.claim("half-done")
 
     api = FakeILink([batch(user_text("m2", "next"))])
-    gateway = wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0)
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                 send_retry_seconds=0.0)
 
     with Host(build=lambda: FakeAgent()) as host:
         gateway.start(host)
@@ -399,7 +457,8 @@ def test_the_cursor_is_not_advanced_when_the_turn_could_not_run(tmp_path):
     api = FakeILink([batch(user_text("m1", "important"), cursor="cursor-moved")])
     state = wechat.GatewayState(tmp_path / "wechat")
     state.save_credentials({"token": "t", "baseUrl": wechat.BASE_URL})
-    gateway = wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0)
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                 send_retry_seconds=0.0)
 
     class RefusingHost:
         """Stands in for a host whose queue is full."""
@@ -421,7 +480,8 @@ def test_the_cursor_advances_after_a_batch_that_did_run(tmp_path):
     api = FakeILink([batch(user_text("m1"), cursor="cursor-moved")])
     state = wechat.GatewayState(tmp_path / "wechat")
     state.save_credentials({"token": "t", "baseUrl": wechat.BASE_URL})
-    gateway = wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0)
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                 send_retry_seconds=0.0)
     agent = FakeAgent()
     host = Host(build=lambda: agent)
     host.start()
@@ -539,8 +599,8 @@ def make_gateway_with_notices(tmp_path, api):
     state = wechat.GatewayState(tmp_path / "wechat")
     state.save_credentials({"token": "bot-token", "baseUrl": wechat.BASE_URL,
                             "accountId": "bot@im.bot", "userId": USER})
-    gateway = wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0,
-                                   announce=notices.append)
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                   send_retry_seconds=0.0, announce=notices.append)
     return gateway, notices
 
 
@@ -578,3 +638,232 @@ def test_repeated_poll_failures_are_announced_once_then_recovery(tmp_path):
     assert len(failures) == 1, notices
     assert any("recovered" in n for n in notices), notices
     assert not any("bot-token" in n for n in notices), "a credential reached a notice"
+
+
+# ---------------------------------------------------------- authorisation
+
+
+def test_an_unauthorised_sender_never_reaches_the_agent(tmp_path):
+    """The allowlist check is before `host.ask`, not after it. Anything that can
+    reach the bot would otherwise be able to run a tool-calling agent."""
+    stranger = "someone-else@im.wechat"
+    api = FakeILink([batch(user_text("m1", "delete everything", user_id=stranger))])
+    agent = FakeAgent()
+    state = wechat.GatewayState(tmp_path / "wechat")
+    state.save_credentials({"token": "t", "baseUrl": wechat.BASE_URL})
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                   send_retry_seconds=0.0)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        _wait_for(lambda: gateway.status()["refused"] == 1)
+        gateway.stop()
+
+    assert agent.responded == [], "an unauthorised message reached the agent"
+    assert api.posts == [], "it answered a stranger"
+    assert gateway.status()["refused_senders"] == [stranger]
+    assert state.seen.is_known("m1") is False, "a refused message was recorded as handled"
+
+
+def test_an_empty_allowlist_refuses_everyone(tmp_path):
+    """Fail closed. A missing config line must not read as "everyone is welcome"."""
+    api = FakeILink([batch(user_text("m1"))])
+    agent = FakeAgent()
+    state = wechat.GatewayState(tmp_path / "wechat")
+    state.save_credentials({"token": "t", "baseUrl": wechat.BASE_URL})
+    gateway = wechat.WeChatGateway(state, api, poll_interval=0.01, send_retry_seconds=0.0)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        _wait_for(lambda: gateway.status()["refused"] == 1)
+        gateway.stop()
+
+    assert agent.responded == []
+    assert api.posts == []
+    assert gateway.status()["allowed"] == []
+
+
+def test_the_allowlist_parses_the_env_value_and_ignores_blanks(monkeypatch):
+    monkeypatch.setenv("WAKU_WECHAT_ALLOW", f" {USER} , second@im.wechat ,,")
+    assert wechat.allowed_senders(Settings()) == {USER, "second@im.wechat"}
+    monkeypatch.setenv("WAKU_WECHAT_ALLOW", "   ")
+    assert wechat.allowed_senders(Settings()) == set()
+
+
+# --------------------------------------------------- messages with no id
+
+
+def test_a_message_without_an_id_never_runs_a_turn(tmp_path):
+    """No id means nothing to deduplicate on, so every re-delivery would run the
+    turn — and its tools — again. Refuse visibly instead of guessing."""
+    no_id = {"from_user_id": USER, "message_type": 1, "context_token": CONTEXT,
+             "item_list": [{"type": 1, "text_item": {"text": "make me a meeting"}}]}
+    api = FakeILink([batch(no_id, cursor="c1"), batch(no_id, cursor="c2")])
+    agent = FakeAgent()
+    gateway = make_gateway(tmp_path, api)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        _wait_for(lambda: len(api.cursors_seen) >= 2)
+        gateway.stop()
+
+    assert agent.responded == [], "an undeduplicable message ran a tool-calling turn"
+    assert api.posts == []
+    assert gateway.status()["no_id"] >= 1
+
+
+# ------------------------------------------------- chunked send retries
+
+
+class LongAgent(FakeAgent):
+    def respond(self, text, observer=None, source="cli", stream=False):
+        return type("R", (), {"reply": "x" * (wechat.MAX_TEXT_CHUNK + 50),
+                              "tool_calls": [], "iterations": 1})()
+
+
+def test_a_confirmed_chunk_is_not_resent_when_a_later_one_fails(tmp_path):
+    """The acceptance point, exactly: chunk 1 confirmed, chunk 2 fails, and the
+    retry must not send chunk 1 again."""
+    class SecondChunkFails(FakeILink):
+        def __init__(self):
+            super().__init__([batch(user_text("m1", "long"))])
+            self.posts = []
+            self.ok = []
+
+        def post_message(self, base_url, token, message):
+            text = message["item_list"][0]["text_item"]["text"]
+            self.posts.append(text)
+            if not self.ok:
+                self.ok.append(text)
+                self.sent.append(message)
+                return {"ret": 0}
+            raise wechat.ApiError("second chunk failed", status=500, code=500)
+
+    api = SecondChunkFails()
+    agent = LongAgent()
+    gateway = make_gateway(tmp_path, api)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        _wait_for(lambda: gateway.status()["pending"])
+        gateway.stop()
+
+    first_chunk = api.ok[0]
+    rest = [text for text in api.posts if text != first_chunk]
+    assert len(api.posts) > 1, "the second chunk was never retried"
+    assert api.posts.count(first_chunk) == 1, (
+        f"the confirmed chunk was sent {api.posts.count(first_chunk)} times"
+    )
+    assert rest and len(set(rest)) == 1, (
+        "a retry sent something other than the pending chunk"
+    )
+    pending = gateway.status()["pending"]
+    assert pending[0]["sentChunks"] == 1 and pending[0]["totalChunks"] == 2
+
+
+def test_a_retried_chunk_reuses_the_same_client_id(tmp_path):
+    """A fresh uuid per attempt would make the server treat the retry as a second
+    message, which is how a user gets the same sentence twice."""
+    api = FakeILink([batch(user_text("m1", "hi"))], send_failures=wechat.SEND_ATTEMPTS)
+    gateway = make_gateway(tmp_path, api)
+
+    with Host(build=lambda: FakeAgent()) as host:
+        gateway.start(host)
+        _wait_for(lambda: len(api.posts) >= 2)
+        gateway.stop()
+
+    assert len({message["client_id"] for message in api.posts}) == 1
+
+
+def test_each_chunk_gets_its_own_stable_client_id():
+    assert wechat.stable_client_id("m1", 0) == wechat.stable_client_id("m1", 0)
+    assert wechat.stable_client_id("m1", 0) != wechat.stable_client_id("m1", 1)
+    assert wechat.stable_client_id("m1", 0) != wechat.stable_client_id("m2", 0)
+
+
+# ------------------------------------------- what "HTTP 200" really means
+
+
+class _FakeResponse:
+    """Just enough of urlopen's return value for `_call`."""
+
+    def __init__(self, payload, status=200):
+        self.status = status
+        self._body = json.dumps(payload).encode()
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def _urlopen_returning(monkeypatch, payload, status=200):
+    monkeypatch.setattr(wechat.urllib.request, "urlopen",
+                        lambda *a, **k: _FakeResponse(payload, status))
+
+
+def test_an_errcode_without_a_ret_field_is_still_a_failure(monkeypatch):
+    """Measured against the live API on 2026-09-23: sending with a dead session
+    answers **HTTP 200** with `{"errcode": -14, "errmsg": "session timeout"}` and
+    no `ret` field at all.
+
+    A checker that only reads `ret` sees nothing wrong and reports the send as
+    delivered — which is the one thing a send must never get wrong. This is why
+    `_call` looks at both fields.
+    """
+    _urlopen_returning(monkeypatch, {"errcode": -14, "errmsg": "session timeout"})
+
+    with pytest.raises(wechat.ApiError) as raised:
+        wechat._call("https://example/ilink/bot/sendmessage", data={"msg": {}}, timeout=5)
+
+    assert raised.value.code == wechat.SESSION_EXPIRED_CODE
+    assert "session timeout" in str(raised.value)
+
+
+def test_a_ret_only_error_is_still_caught(monkeypatch):
+    """The API's other error shape, also measured: err_msg + ret."""
+    _urlopen_returning(monkeypatch, {"err_msg": "invalid bot_type", "ret": 2})
+
+    with pytest.raises(wechat.ApiError) as raised:
+        wechat._call("https://example/ilink/bot/get_bot_qrcode", timeout=5)
+
+    assert raised.value.code == 2
+
+
+def test_a_clean_response_is_not_an_error(monkeypatch):
+    _urlopen_returning(monkeypatch, {"ret": 0, "msgs": []})
+    assert wechat._call("https://example/x", timeout=5)["ret"] == 0
+
+
+def test_a_send_that_loses_its_session_is_kept_and_reported(tmp_path):
+    """End to end: the expired send must leave the reply queued, not delivered,
+    and say why."""
+    class ExpiredOnSend(FakeILink):
+        def post_message(self, base_url, token, message):
+            self.posts.append(message)
+            raise wechat.ApiError("session timeout", code=wechat.SESSION_EXPIRED_CODE)
+
+    api = ExpiredOnSend([batch(user_text("m1", "hi"))])
+    notices: list = []
+    agent = FakeAgent()
+    state = wechat.GatewayState(tmp_path / "wechat")
+    state.save_credentials({"token": "t", "baseUrl": wechat.BASE_URL})
+    gateway = wechat.WeChatGateway(state, api, allowed=[USER], poll_interval=0.01,
+                                   send_retry_seconds=0.0, announce=notices.append)
+
+    with Host(build=lambda: agent) as host:
+        gateway.start(host)
+        # 发送撞上 -14 → phase 变 expired；回复留在 outbox 里。
+        _wait_for(lambda: gateway.status()["phase"] == "expired")
+        _wait_for(lambda: gateway.status()["pending"])
+        expired_phase = gateway.status()["phase"]
+        gateway.stop()
+
+    assert len(api.posts) == 1, "it retried a token that is already dead"
+    assert expired_phase == "expired"
+    assert any("waku wechat login" in n for n in notices), notices
+    assert gateway.status()["pending"][0]["sentChunks"] == 0

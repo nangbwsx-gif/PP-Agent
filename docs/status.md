@@ -27,12 +27,20 @@ a failed rebuild keeps the working instance. Shutdown refuses new requests,
 answers the ones already queued, and closes the MCP bridge, the SQLite
 connection and the listening socket.
 
-**The WeChat gateway is off by default** and needs `waku wechat login` (a QR
-scan) before it does anything. Enabled-but-not-logged-in is a normal state. A
-WeChat problem — no network, an expired session, a failed send — is reported and
-retried on the WeChat side only; the browser keeps working. It is text-only,
-one bound account, and it cannot message you first. See
-[commands.md](commands.md#wechat-optional-off-by-default).
+**The WeChat gateway is off by default and refuses everyone until you say
+otherwise.** `WAKU_WECHAT=1` turns it on; `WAKU_WECHAT_ALLOW` lists the WeChat
+user ids allowed to talk to it, checked before anything can reach the host, and
+empty means nobody. `waku wechat login` prints the line to paste but does not
+write it. Enabled-but-not-logged-in is a normal state, and a WeChat problem — no
+network, an expired session, a failed send — is reported and retried on the
+WeChat side only; the browser keeps working.
+
+A turn runs at most once per message (the id is claimed before the turn) and a
+reply is delivered at least once (failed sends wait in a persistent outbox and
+are retried without re-running the turn). The boundaries that are **not**
+guaranteed — a duplicate reply after a retry that had actually landed, no
+delivery receipt from WeChat, a stale `context_token` that cannot be re-opened —
+are listed in [commands.md](commands.md#what-the-delivery-guarantees-actually-are).
 
 **The WeChat side has not been through a real device since it moved out of the
 lab.** The protocol, the login and the round trip were verified live on
@@ -40,7 +48,7 @@ lab.** The protocol, the login and the round trip were verified live on
 covered offline by `evals/deterministic/test_wechat_gateway.py`, but nobody has
 scanned a QR with the gateway itself running. Treat it as working-but-unproven.
 
-**753 deterministic evals pass offline**, with no API key; 38 more skip without
+**768 deterministic evals pass offline**, with no API key; 38 more skip without
 one. On Windows 3 of them fail (temp-file and process assumptions, not this
 checkout) and 2 more need `python -X utf8` to read files with the locale codec
 — see Known broken. CI runs the offline tier on every PR along with

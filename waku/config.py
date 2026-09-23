@@ -93,6 +93,13 @@ class Settings:
     wechat: bool = field(
         default_factory=lambda: os.getenv("WAKU_WECHAT", "") in ("1", "true", "yes")
     )
+    # 允许跟这个 bot 说话的微信用户 id，逗号分隔。
+    #
+    # **默认空 = 谁都不许（fail closed）。** 入站消息先过这张名单，过了才可能
+    # 碰到 Waku —— 一个能被任何人触发、还能调工具的 agent 不是一个小问题。
+    # 名单空的时候 status 会直说要加哪一行；`waku wechat login` 也会把它打印
+    # 出来，但不替你写 .env（静默改安全配置比多敲一行糟得多）。
+    wechat_allow: str = field(default_factory=lambda: os.getenv("WAKU_WECHAT_ALLOW", ""))
     # 通过 `gh` CLI 自身的认证进行只读 GitHub 访问（此处无需令牌）。
     # 默认关闭且有意如此：每个注册的工具都会出现在每个
     # 提示中，而读取 PR 是维护者能力，不是助手能力。

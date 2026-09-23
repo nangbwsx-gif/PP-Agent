@@ -61,7 +61,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -162,11 +162,21 @@ def _call(url, *, data=None, headers=None, timeout):
             code=payload.get("errcode", payload.get("ret")),
             payload=payload,
         )
-    if isinstance(payload.get("ret"), int) and payload["ret"] != 0:
+
+    # HTTP 200 不等于成功。实测（2026-09-23，对一个死掉的 session 发消息）：
+    #
+    #     {"errcode": -14, "errmsg": "session timeout"}
+    #
+    # **根本没有 `ret` 字段。** 一个只看 ret 的检查会把这次发送读成“已送达” ——
+    # 而发送是绝对不能读错的一件事。所以 ret 和 errcode **两个都要看**，
+    # 任一个存在且非 0 就是失败。
+    ret, code = payload.get("ret"), payload.get("errcode")
+    failed = (isinstance(ret, int) and ret != 0) or (isinstance(code, int) and code != 0)
+    if failed:
         raise ApiError(
-            payload.get("err_msg") or payload.get("errmsg") or f"ret={payload['ret']}",
+            payload.get("err_msg") or payload.get("errmsg") or f"ret={ret} errcode={code}",
             status=status,
-            code=payload.get("errcode", payload["ret"]),
+            code=code if isinstance(code, int) and code != 0 else ret,
             payload=payload,
         )
     return payload
@@ -206,11 +216,26 @@ class ILinkApi:
         )
 
 
-def build_text_message(user_id: str, context_token: str, text: str) -> dict:
+# 固定的命名空间，用来给每个分段算一个稳定 client_id。不要改它：改了等于
+# 把所有在途重试变成新消息。
+CLIENT_NAMESPACE = uuid.UUID("2f8b7c14-9d3a-5e6b-8c41-7a0d5b2e9f13")
+
+
+def stable_client_id(message_id: str, index: int) -> str:
+    """同一条入站消息的第 index 段，永远是同一个 client_id。
+
+    每次重试都 `uuid4()` 的话，服务端会把重试当成**一条新消息** —— 用户收到两份。
+    用 uuid5 从 (message_id, index) 派生：同一段永远同一个 id，不同段不同。
+    """
+    return str(uuid.uuid5(CLIENT_NAMESPACE, f"{message_id}:{index}"))
+
+
+def build_text_message(user_id: str, context_token: str, text: str, client_id: str) -> dict:
+    """`client_id` 是必填参数，故意的：它必须是稳定的，不能在上游随手 uuid4()。"""
     return {
         "from_user_id": "",
         "to_user_id": user_id,
-        "client_id": str(uuid.uuid4()),
+        "client_id": client_id,
         "message_type": MESSAGE_TYPE_BOT,
         "message_state": MESSAGE_STATE_FINISH,
         "context_token": context_token,
@@ -328,6 +353,86 @@ class SeenMessages:
         return unfinished
 
 
+class Outbox:
+    """回合已经跑完、但还没送达的回复。
+
+    为什么需要它：**发送失败绝不能等于"已送达"。** 回合已经跑过了（工具可能已经
+    产生了副作用），所以永远只能重发、不能重跑。回复先写进这里，
+    `seen.complete()` 才把那条消息记为已处理 —— 那个标记的意思是
+    "回合跑完了、回复不会丢"，**不是**"回复发出去了"。
+
+    逐段记录确认状态，所以某一段失败重试时不会重发前面已经确认的段落。
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._entries: list[dict] = list(_read_json(path, {}).get("entries") or [])
+
+    def _save(self) -> None:
+        _write_json(self.path, {"entries": self._entries})
+
+    def _find(self, message_id: str) -> dict | None:
+        return next((e for e in self._entries if e.get("messageId") == message_id), None)
+
+    def entries(self) -> list[dict]:
+        return [dict(entry) for entry in self._entries]
+
+    def count(self) -> int:
+        return len(self._entries)
+
+    def enqueue(self, message_id: str, user_id: str, context_token: str, text: str) -> None:
+        """把一条回复排进待发。分段和 client_id 在这里就定死 —— 重试要用同一个。"""
+        if not text or self._find(message_id) is not None:
+            return
+        self._entries.append({
+            "messageId": message_id,
+            "userId": user_id,
+            "contextToken": context_token,
+            "createdAt": datetime.now(UTC).isoformat(timespec="seconds"),
+            "attempts": 0,
+            "lastError": "",
+            "chunks": [
+                {"text": chunk, "clientId": stable_client_id(message_id, index), "sent": False}
+                for index, chunk in enumerate(chunk_text(text))
+            ],
+        })
+        self._save()
+
+    def mark_sent(self, message_id: str, index: int) -> None:
+        entry = self._find(message_id)
+        if entry is None:
+            return
+        entry["chunks"][index]["sent"] = True
+        self._save()
+
+    def note_attempt(self, message_id: str, error: str) -> None:
+        entry = self._find(message_id)
+        if entry is None:
+            return
+        entry["attempts"] = int(entry.get("attempts", 0)) + 1
+        entry["lastError"] = error
+        self._save()
+
+    def remove(self, message_id: str) -> None:
+        before = len(self._entries)
+        self._entries = [e for e in self._entries if e.get("messageId") != message_id]
+        if len(self._entries) != before:
+            self._save()
+
+    def summary(self) -> list[dict]:
+        """给 status 看的一小段 —— 不含回复正文。回复内容属于对话，不属于日志。"""
+        return [
+            {
+                "messageId": e.get("messageId", ""),
+                "attempts": e.get("attempts", 0),
+                "sentChunks": sum(1 for c in e.get("chunks", []) if c.get("sent")),
+                "totalChunks": len(e.get("chunks", [])),
+                "lastError": e.get("lastError", ""),
+            }
+            for e in self._entries
+        ]
+
+
 class GatewayState:
     """gateway 落在磁盘上的一切，全在 `<home>/wechat/` 下。
 
@@ -340,6 +445,7 @@ class GatewayState:
         self.credentials_path = directory / "credentials.json"
         self.cursor_path = directory / "cursor.json"
         self.seen = SeenMessages(directory / "seen.json")
+        self.outbox = Outbox(directory / "outbox.json")
 
     def credentials(self) -> dict | None:
         return _read_json(self.credentials_path, None)
@@ -380,10 +486,12 @@ class WeChatGateway:
     name = "wechat"
 
     def __init__(self, state: GatewayState, api: ILinkApi | None = None, *,
+                 allowed: Collection[str] = (),
                  poll_interval: float = RETRY_BASE_SECONDS,
                  send_retry_seconds: float = SEND_RETRY_SECONDS,
                  announce: Callable[[str], None] | None = None):
         self._state = state
+        self._allowed = {sender for sender in allowed if sender}
         self._api = api or ILinkApi()
         self._poll_interval = poll_interval
         self._send_retry_seconds = send_retry_seconds
@@ -398,6 +506,9 @@ class WeChatGateway:
         self._phase = "stopped"       # stopped | not-logged-in | polling | expired
         self._handled = 0
         self._failed = 0
+        self._refused = 0                        # 不在白名单里的发送者
+        self._refused_senders: list[str] = []    # 看到就记下来，好用得着去加白名单
+        self._no_id = 0                          # 没有 message_id、无法去重的消息
         # 上一次跑崩在回合中间的那些 id。start() 时取一次，之后由 status 报告。
         self._interrupted: list[str] = []
         # 当前这轮连续失败是否已经报过。断线重试是静默的（否则日志被刷爆），
@@ -461,6 +572,14 @@ class WeChatGateway:
                 "last_error": self._last_error,
                 "last_note": self._last_note,
                 "unfinished": list(self._interrupted),
+                # 白名单：空 = 谁都不许。status 看这个就知道要不要加一行。
+                "allowed": sorted(self._allowed),
+                "refused": self._refused,
+                "refused_senders": list(self._refused_senders),
+                "no_id": self._no_id,
+                # 已产生但还没确认送达的回复。这里非空才是真信号：
+                # 它意味着“回合跑过了，但用户可能没看到” —— 重启后会再试发。
+                "pending": self._state.outbox.summary(),
             }
 
     # ------------------------------------------------------------ 长轮询
@@ -468,6 +587,9 @@ class WeChatGateway:
     def _poll_forever(self, host: Host, credentials: dict) -> None:
         base_url = credentials.get("baseUrl") or BASE_URL
         token = credentials.get("token", "")
+        # 上一次没送出去的回复，先送掉 —— **只发，绝不重跑回合**。
+        # “发送失败能在重启后被处理”就落在这一行上。
+        self.flush_outbox(base_url, token)
         cursor = self._state.cursor()
         backoff = self._poll_interval
 
@@ -525,27 +647,49 @@ class WeChatGateway:
         next_cursor = response.get("get_updates_buf") or ""
         if next_cursor and next_cursor != self._state.cursor():
             self._state.save_cursor(next_cursor)
+        # 游标推进之后才发。回复已经安全落在 outbox 里，所以即使这里发失败，
+        # 推进游标也是对的 —— 回合确实完成了，投递由 outbox 单独负责。
+        self.flush_outbox(base_url, token)
         return next_cursor or self._state.cursor()
 
     def _handle_one(self, host: Host, base_url: str, token: str, raw: dict) -> None:
         message_id = str(raw.get("message_id", ""))
         user_id = str(raw.get("from_user_id", ""))
         context_token = str(raw.get("context_token", ""))
-        kind = detect_kind(raw.get("item_list"))
-        text = extract_text(raw.get("item_list"))
 
-        if message_id and self._state.seen.is_known(message_id):
+        # ---- 1. 先过白名单。这一步在**任何可能碰到 Waku 的动作之前** ——
+        # 一个能被任何人触发、还能调工具的 agent 不是一个小问题。拒绝时
+        # **不回复**：跟未授权的人对话本身就是错。
+        if not self._is_allowed(user_id):
+            self._refused += 1
+            self._remember_refused(user_id)
+            self._note(f"refused {self._refused} message(s) from senders not in "
+                       "WAKU_WECHAT_ALLOW; `waku wechat status` lists them")
+            return
+
+        # ---- 2. 没有可去重的 ID 就不跑回合。
+        # 一个无法去重的消息每重投一次就跑一次，而工具是有副作用的 —— 宁可
+        # 明确不处理（status 报出来），也不要“大概只跑了一次”。
+        if not message_id:
+            self._no_id += 1
+            self._note(f"refused {self._no_id} message(s) with no message_id: "
+                       "they cannot be deduplicated, so a turn could run twice")
+            return
+
+        if self._state.seen.is_known(message_id):
             self._note(f"duplicate {message_id} ignored")
             return
 
-        if not (user_id and context_token):
+        kind = detect_kind(raw.get("item_list"))
+        text = extract_text(raw.get("item_list"))
+
+        if not context_token:
             # 没有 context_token 就发不出去，也没有会话可归属。不认领它 ——
             # 认领等于假装处理过，而重投时它还能再试一次。
-            self._note(f"message {message_id} has no user id or context token; skipped")
+            self._note(f"message {message_id} has no context token; skipped")
             return
 
-        if message_id:
-            self._state.seen.claim(message_id)          # ← 认领在跑回合之前
+        self._state.seen.claim(message_id)              # ← 认领在跑回合之前
 
         try:
             if kind != "text":
@@ -558,11 +702,8 @@ class WeChatGateway:
                 # 只有整轮结束后的最终回复才发出去。中间任何流式片段都不发。
                 reply = result.reply or ""
                 self._handled += 1
-
-            self._deliver(base_url, token, user_id, context_token, reply, message_id)
         except (HostBusy, HostStopped):
-            if message_id:
-                self._state.seen.unclaim(message_id)
+            self._state.seen.unclaim(message_id)
             raise
         except Exception as exc:
             # 回合可能跑了一半。认领保留 —— 重试会重复执行有副作用的工具。
@@ -570,32 +711,81 @@ class WeChatGateway:
             self._last_error = f"message {message_id}: {type(exc).__name__}: {exc}"
             return
 
-        if message_id:
-            self._state.seen.complete(message_id)
+        # 回合跑完了。回复先进 outbox，**然后**才把这条消息记为已处理：
+        # 那个标记说的是“回复不会丢”，不是“回复发出去了”。
+        if reply:
+            self._state.outbox.enqueue(message_id, user_id, context_token, reply)
+        else:
+            self._note(f"turn for {message_id} produced no text; nothing queued")
+        self._state.seen.complete(message_id)
 
-    def _deliver(self, base_url: str, token: str, user_id: str,
-                 context_token: str, text: str, message_id: str) -> None:
-        """发回复。**只有发送会重试**，回合不会 —— 这是两件不同的事。
+    def flush_outbox(self, base_url: str, token: str) -> None:
+        """把待发的回复送出去。**只发，不跑回合。**
+        逐段确认：一次 flush 里失败的那一段会当场重试几次，而**已经确认的段落
+        永远不会被重发**。始终送不出去的留在 outbox 里，由 status 报出来，
+        重启后会再试 —— 但回合永远不会为它再跑一次。
 
-        重发最坏是多一条重复回复；重跑回合会重复执行有副作用的工具。
+        返回后 outbox 里剩下的东西，就是"已产生但尚未确认送达"的全部。
         """
-        if not text:
-            self._note(f"turn for {message_id} produced no text; nothing sent")
+        if self._phase == "expired":
+            # session 已经死了：拿同一个 token 重发只会再撞一次墙。回复留在
+            # outbox 里等重新登录（那需要重启 serve，因为轮询线程也已经退了）。
             return
+        for entry in self._state.outbox.entries():
+            aborted = False
+            for index, chunk in enumerate(entry.get("chunks") or []):
+                if chunk.get("sent"):
+                    continue                      # 已确认的段落不重发
+                error = self._send_chunk(base_url, token, entry, chunk)
+                if error:
+                    self._state.outbox.note_attempt(entry["messageId"], error)
+                    self._failed += 1
+                    self._last_error = (
+                        f"sendmessage failed for {entry['messageId']} "
+                        f"chunk {index + 1}/{len(entry['chunks'])}: {error}"
+                    )
+                    aborted = True
+                    break
+                self._state.outbox.mark_sent(entry["messageId"], index)
+            if not aborted:
+                self._state.outbox.remove(entry["messageId"])
+
+    def _send_chunk(self, base_url: str, token: str, entry: dict, chunk: dict) -> str:
+        """发一段，失败时只重试**这一段**。成功返回空串，失败返回错误文本。
+
+        client_id 是稳定的：即使服务端其实收到了第一次、只是回包丢了，重试也不会
+        在它那里变成第二条消息。
+
+        一次 401/-14 意味着整个 session 已经死了，重试同一个 token 没有任何意义 ——
+        直接把 phase 标成 expired，让用户去重新扫码。
+        """
         last = ""
         for attempt in range(SEND_ATTEMPTS):
             try:
-                for chunk in chunk_text(text):
-                    self._api.post_message(
-                        base_url, token, build_text_message(user_id, context_token, chunk)
-                    )
-                return
+                self._api.post_message(base_url, token, build_text_message(
+                    entry["userId"], entry["contextToken"], chunk["text"], chunk["clientId"]))
+                return ""
             except ApiError as exc:
                 last = str(exc)
+                if exc.code == SESSION_EXPIRED_CODE:
+                    self._set_phase("expired")
+                    self._announce(
+                        "WeChat session expired while sending — run `waku wechat login`. "
+                        "The reply stays queued and will go out after that."
+                    )
+                    return last
                 if attempt + 1 < SEND_ATTEMPTS:
                     time.sleep(self._send_retry_seconds)
-        self._failed += 1
-        self._last_error = f"sendmessage failed for {message_id}: {last}"
+        return last
+
+    def _is_allowed(self, user_id: str) -> bool:
+        """白名单空 = 谁都不许。故意 fail closed 而不是 fail open。"""
+        return bool(user_id) and user_id in self._allowed
+
+    def _remember_refused(self, user_id: str) -> None:
+        if user_id and user_id not in self._refused_senders:
+            self._refused_senders.append(user_id)
+            del self._refused_senders[:-5]        # 只留最近 5 个，够加白名单用了
 
     def _announce(self, message: str) -> None:
         """说一句给用户听。**不带凭据、不带正文。** 用户需要知道它掉线了，
@@ -622,6 +812,11 @@ def state_directory(home: Path | None = None) -> Path:
     return Path(resolved) / "wechat"
 
 
+def allowed_senders(settings) -> set[str]:
+    """`WAKU_WECHAT_ALLOW` 里的微信用户 id。**空 = 谁都不许（fail closed）。**"""
+    return {part.strip() for part in (settings.wechat_allow or "").split(",") if part.strip()}
+
+
 def from_environment() -> WeChatGateway | None:
     """`WAKU_WECHAT=1` 才返回一个 gateway；默认返回 None。
 
@@ -630,7 +825,8 @@ def from_environment() -> WeChatGateway | None:
     """
     if not load_settings().wechat:
         return None
-    return WeChatGateway(GatewayState(state_directory()))
+    settings = load_settings()
+    return WeChatGateway(GatewayState(state_directory()), allowed=allowed_senders(settings))
 
 
 # ---------------------------------------------------------------------- CLI
@@ -701,7 +897,15 @@ def cmd_login(force: bool = False, timeout: float = 180.0) -> int:
             state.clear_cursor()      # 换了身份，旧的流位置没有意义
             print(f"logged in — credentials saved to {state.credentials_path}")
             print(f"accountId={status.get('ilink_bot_id', '')}")
-            print("set WAKU_WECHAT=1 in .env to have `waku serve` start the gateway")
+            # 白名单**不替你写** —— 静默改安全配置比多敲一行糟得多。
+            # 这里只把要加的那行原样打印出来，复制粘贴即可。
+            bound = status.get("ilink_user_id", "")
+            if bound:
+                print()
+                print("now allow your own WeChat account to talk to it — add this to .env:")
+                print("  WAKU_WECHAT=1")
+                print(f"  WAKU_WECHAT_ALLOW={bound}")
+                print("(nobody can talk to it until that line is there — it fails closed)")
             return 0
         time.sleep(0.5)
 
@@ -713,6 +917,7 @@ def cmd_status() -> int:
     settings = load_settings()
     state = GatewayState(state_directory())
     credentials = state.credentials()
+    allowed = allowed_senders(settings)
     print(f"enabled     : {'yes' if settings.wechat else 'no'}  (set WAKU_WECHAT=1 in .env)")
     print(f"state dir   : {state.directory}")
     print(f"logged in   : {'yes' if credentials else 'no'}")
@@ -720,6 +925,16 @@ def cmd_status() -> int:
         print(f"  accountId : {credentials.get('accountId', '')}")
         print(f"  userId    : {credentials.get('userId', '')}")
         print(f"  savedAt   : {credentials.get('savedAt', '')}")
+    # 白名单是这一版最重要的一个开关，所以放得很显眼。
+    if allowed:
+        print(f"allowed     : {len(allowed)} sender(s)")
+        for sender in sorted(allowed):
+            print(f"              {sender}")
+    else:
+        print("allowed     : NONE — nobody can talk to this bot (it fails closed)")
+        bound = (credentials or {}).get("userId", "")
+        if bound:
+            print(f"              add to .env:  WAKU_WECHAT_ALLOW={bound}")
     cursor = state.cursor()
     print(f"cursor      : {cursor[:32] + '…' if len(cursor) > 32 else cursor or '(empty)'}")
     unfinished = list(_read_json(state.seen.path, {}).get("claimed") or [])
@@ -728,6 +943,17 @@ def cmd_status() -> int:
         print("              they will NOT be retried (a retry could repeat tool side effects)")
         for message_id in unfinished[:5]:
             print(f"              {message_id}")
+    pending = state.outbox.summary()
+    if pending:
+        print(f"undelivered : {len(pending)} reply(ies) the agent produced but WeChat has")
+        print("              not confirmed. They are re-sent on the next `waku serve`,")
+        print("              and the turn is NOT re-run for them:")
+        for entry in pending[:5]:
+            print(f"              {entry['messageId']}  "
+                  f"{entry['sentChunks']}/{entry['totalChunks']} chunks sent, "
+                  f"{entry['attempts']} attempt(s)")
+            if entry["lastError"]:
+                print(f"                last error: {entry['lastError']}")
     return 0
 
 
