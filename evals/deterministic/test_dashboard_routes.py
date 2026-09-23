@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
+
 from waku.ops import dashboard
 
 # Every path the POST router accepts. `/api/compare` (non-streaming) was removed
@@ -135,3 +137,43 @@ def test_the_removed_arena_duplicate_stays_removed():
     src = _source()
     assert "def _compare_one" not in src
     assert "def compare_models" not in src
+
+
+def test_a_second_dashboard_cannot_bind_an_occupied_port():
+    """端口被占必须真的绑不上 —— main() 的"换下一个端口"循环全指望这件事。
+
+    HTTP 的 HTTPServer 默认 allow_reuse_address = 1，而 Windows 的
+    SO_REUSEADDR 语义和 POSIX 不同：它允许第二个 socket 绑到已经在用的地址
+    上，不报错。结果是循环不触发、两个 dashboard 同时听着 7777，谁先接住
+    请求谁响应 —— 用户看到的是"我改了配置或换了语言，刷新却没变化"。
+    这个仓库里被它骗过两次：一次这页永远显示旧语言，一次是中文实例把英文
+    实例的请求接走了。
+
+    这个测试在两种平台上都有意义：POSIX 的 SO_REUSEADDR 本来就不允许双绑
+    （那需要 SO_REUSEPORT），所以断言在两边都成立。
+    """
+    from http.server import BaseHTTPRequestHandler
+
+    from waku.ops.dashboard import DashboardServer
+
+    class Noop(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+    first = DashboardServer(("127.0.0.1", 0), Noop)
+    try:
+        port = first.server_address[1]
+        with pytest.raises(OSError):
+            DashboardServer(("127.0.0.1", port), Noop)
+    finally:
+        first.server_close()
+
+
+def test_the_bind_switch_follows_the_platform():
+    """Windows 上必须关掉 reuse-address（那里它允许双绑）；POSIX 上必须留着
+    （那里它只影响 TIME_WAIT，关掉会让刚重启的服务偶尔绑不上）。"""
+    import sys
+
+    from waku.ops.dashboard import DashboardServer
+
+    assert DashboardServer.allow_reuse_address is (sys.platform != "win32")

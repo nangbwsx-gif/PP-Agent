@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -924,6 +925,22 @@ def index_html() -> bytes:
     return html.encode("utf-8")
 
 
+class DashboardServer(ThreadingHTTPServer):
+    """端口被占时必须真的绑不上 —— 这直接决定 main() 的游走逻辑有没有意义。
+
+    HTTPServer 默认 allow_reuse_address = 1，而 Windows 的 SO_REUSEADDR 语义
+    和 POSIX 不同：它允许把第二个 socket 绑到已经在用的地址上，不报错。于是
+    "端口被占就试下一个"的循环永远不触发，两个 dashboard 同时听着 7777，谁先
+    接住请求谁响应 —— 用户看到的现象是"我改了配置/换了语言，刷新却没变"。
+    这个仓库里已经被它骗过两次（一次是这页永远显示旧语言，一次是两个实例
+    抢端口）。
+
+    POSIX 保留这个开关：那里它只影响 TIME_WAIT，关掉会让刚重启的服务偶发地
+    绑不上自己的端口。
+    """
+    allow_reuse_address = sys.platform != "win32"
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, body: bytes, ctype: str, *, no_cache: bool = False) -> None:
         self.send_response(200)
@@ -1202,7 +1219,7 @@ def main() -> None:
     base = int(os.getenv("WAKU_DASHBOARD_PORT") or os.getenv("PORT") or PORT)
     for port in range(base, base + 10):  # walk past a busy port instead of crashing
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            server = DashboardServer(("127.0.0.1", port), Handler)
         except OSError:
             print(f"port {port} busy, trying {port + 1}…")
             continue
