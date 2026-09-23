@@ -7,10 +7,10 @@ import socket
 
 import pytest
 
+from evals.helpers import stub_host
 from waku import integrations
 from waku.integrations import IntegrationState, IntegrationStatus
 from waku.loop.models import PROVIDERS
-from waku.ops import browser_agent
 from waku.tools import calendar
 
 
@@ -136,7 +136,7 @@ def test_disabling_an_integration_clears_connected_health(monkeypatch, tmp_path)
     _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(integrations, "_extra_installed", lambda name: True)
     (tmp_path / ".env").write_text("WAKU_GOOGLE_CALENDAR=1" + chr(10))
-    monkeypatch.setattr(browser_agent, "rebuild", lambda: None)
+    stub_host(monkeypatch)          # 一次设置保存不该真建 Waku
     integrations.record_health(
         "google_calendar", IntegrationStatus(IntegrationState.CONNECTED)
     )
@@ -153,7 +153,7 @@ def test_disabling_an_integration_clears_connected_health(monkeypatch, tmp_path)
 def test_google_save_probes_candidate_and_records_connected(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(integrations, "_extra_installed", lambda name: True)
-    monkeypatch.setattr(browser_agent, "rebuild", lambda: None)
+    stub_host(monkeypatch)          # 一次设置保存不该真建 Waku
     captured = {}
     monkeypatch.setattr(
         calendar,
@@ -220,7 +220,7 @@ def test_google_save_failure_can_force_without_writing_first(monkeypatch, tmp_pa
 def test_google_force_save_skips_probe_and_records_error(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(integrations, "_extra_installed", lambda name: True)
-    monkeypatch.setattr(browser_agent, "rebuild", lambda: None)
+    stub_host(monkeypatch)          # 一次设置保存不该真建 Waku
 
     def unexpected_probe(home, calendar_id):
         raise AssertionError("force save must skip the probe")
@@ -247,7 +247,7 @@ def test_disabling_google_skips_probe(monkeypatch, tmp_path):
     (tmp_path / ".env").write_text(
         "WAKU_GOOGLE_CALENDAR=1\nWAKU_GOOGLE_CALENDAR_ID=team@example.com\n"
     )
-    monkeypatch.setattr(browser_agent, "rebuild", lambda: None)
+    stub_host(monkeypatch)          # 一次设置保存不该真建 Waku
 
     def unexpected_probe(home, calendar_id):
         raise AssertionError("disabled integrations must not be probed")

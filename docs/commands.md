@@ -8,6 +8,7 @@ targets are aliases for the same things, plus the eval and tracing tools.
 | Command | Does |
 |---|---|
 | `waku` | chat in the terminal |
+| `waku serve` | the resident process: one Waku, shared by every gateway (`--zh`, `--dev` as below) |
 | `waku dashboard` | the live cockpit at localhost:7777 — Overview, Memory, Tools, Models, Connections, Behaviour |
 | `waku dashboard --dev` | the same, plus the developer pages (graph, loop, ops, database, the two races, model and connection setup) |
 | `waku voice` | talk to it — the "waku waku" wake word, or push-to-talk (needs the `[voice]` extra) |
@@ -24,6 +25,12 @@ targets are aliases for the same things, plus the eval and tracing tools.
 
 In the dashboard chat, `/connect google` and `/connect waku-memory` do the same
 as their `waku connect` commands, and `/help` lists the graph workflows.
+
+`waku serve` and `waku dashboard` currently run the same process: the resident
+host (see [resident-host-design.md](resident-host-design.md)) holds the one Waku
+and the dashboard is its first gateway, so there is nothing for them to differ
+on yet. `serve` is the name that grows gateways; `dashboard` stays because that
+is what people already type.
 
 ## make
 

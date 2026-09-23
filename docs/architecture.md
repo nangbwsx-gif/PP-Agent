@@ -6,10 +6,19 @@ now with a file path on every box.
 
 ```mermaid
 flowchart TB
-    subgraph GW["Gateway Interface — waku/gateway/"]
+    subgraph HOST["Resident Host — waku/runtime/host.py"]
+        AGENT["one Waku instance<br/>(built lazily, rebuilt between turns)"]
+        QUEUE["one worker + a bounded queue<br/>one turn at a time, in arrival order"]
+    end
+
+    subgraph GW["Gateway Interface — waku/gateway/ + ops/dashboard.py"]
         CLI["cli.py (default)"]
         VOICE["voice.py (wake word)"]
+        DASH["ops/dashboard.py"]
     end
+
+    GW -->|"ask(source, session_id)"| QUEUE --> AGENT
+    AGENT -->|reply| GW
 
     subgraph RUN["Ephemeral Agent Run — everything here is rebuilt per turn"]
         WM["Working Memory — runtime/session.py<br/>SOUL.md + memory context + chat history"]
@@ -22,8 +31,8 @@ flowchart TB
         GUARD["end-loop guardrails:<br/>no-tool-call exit · max iterations"]
     end
 
-    GW --> WM
-    LLM -->|reply| GW
+    AGENT --> WM
+    LLM -->|reply| AGENT
 
     subgraph MEM["Memory — waku/memory/"]
         GATE{{"retrieval_gate.py<br/>'does this turn need memory?'"}}
@@ -37,7 +46,7 @@ flowchart TB
     WM -.->|every turn| GATE
     GATE -->|only if needed| SEM & EPI
     PROC -->|on keyword match| WM
-    GW -->|save messages| DB
+    AGENT -->|save messages| DB
     CONS -->|distill into facts| SEM
     CONS -->|one episode| EPI
     SEM & EPI --- DB
@@ -57,13 +66,15 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-  GW["Gateway<br/>cli · voice · dashboard"] --> WM["Working memory<br/>SOUL.md + memory + history"]
+  GW["Gateway<br/>cli · voice · dashboard"] --> HOST["Resident host<br/>one Waku · one turn at a time"]
+  HOST --> WM["Working memory<br/>SOUL.md + memory + history"]
   WM --> LLM
   subgraph LOOP["The Loop — loop/agent.py"]
     LLM["LLM"] -->|tool call| TOOLS["Tools<br/>create_event · list_events<br/>search_web · save_note · …"]
     TOOLS -->|result| LLM
   end
   LLM -->|reply| REPLY["Reply"] --> GW
+  HOST -.- ACK["asks name their own source + session"]:::wm
   GATE{{"Retrieval gate<br/>does this turn need memory?"}} -. only if needed .-> WM
   MEM[("Memory — state.db<br/>SQLite + FTS5<br/>semantic · episodic · procedural")] --> GATE
   REPLY -. save chat .-> MEM
@@ -89,6 +100,10 @@ friendly view; the **Data** tab shows the raw `state.db` tables.
 
 ## Which file is which
 
+- `waku/runtime/host.py` — the resident process's one Waku: a single worker
+  running one turn at a time, a bounded queue, and one session bound per request.
+  Gateways hold the host, never the instance. See
+  [resident-host-design.md](resident-host-design.md).
 - `waku/gateway/` — how text gets in and out: `cli.py`, `voice.py` (wake word)
   and `ops/dashboard.py`. Gateways only move text.
 - `waku/runtime/session.py` — working memory for one turn: SOUL.md, memory

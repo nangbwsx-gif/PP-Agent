@@ -6,21 +6,31 @@
 Read this before opening a PR or filing an issue: most of what is already
 known-broken is below, and half of it already has a fix in flight.
 
-**Last updated:** 2026-09-19
+**Last updated:** 2026-09-23
 
 ---
 
 ## What works
 
 The four pillars run: the loop, memory (semantic + episodic + procedural with
-a retrieval gate), tools, and both eval tiers. `waku`, `waku dashboard`,
-`waku voice`, `waku brief` and `waku connect google` all start.
+a retrieval gate), tools, and both eval tiers. `waku`, `waku serve`,
+`waku dashboard`, `waku voice`, `waku brief` and `waku connect google` all
+start.
 
-**692 deterministic evals pass offline**, with no API key; 61 more are live
-evals that skip without one. On Windows 3 of them fail (temp-file and process
-assumptions, not this checkout) and 2 more need `python -X utf8` to read files
-with the locale codec — see Known broken. CI runs the offline tier on every PR
-along with
+**`waku serve` is the resident process.** One Waku, held by
+`waku/runtime/host.py`, with the dashboard as its first gateway (see
+[resident-host-design.md](resident-host-design.md)). Every request names its own
+`source` and `session_id`, the host binds the session inside a serial boundary,
+and turns run one at a time in arrival order. `waku dashboard` still works and
+runs the same process. Settings changes rebuild the one instance between turns;
+a failed rebuild keeps the working instance. Shutdown refuses new requests,
+answers the ones already queued, and closes the MCP bridge, the SQLite
+connection and the listening socket.
+
+**725 deterministic evals pass offline**, with no API key; 38 more skip without
+one. On Windows 3 of them fail (temp-file and process assumptions, not this
+checkout) and 2 more need `python -X utf8` to read files with the locale codec
+— see Known broken. CI runs the offline tier on every PR along with
 ruff, the skills validator, and a check that `.env.example` still matches the
 integrations registry.
 

@@ -84,3 +84,35 @@ def make_waku(home: Path, client=None, **settings_overrides):
     if client is not None and not settings.api_key:
         settings.api_key = "offline"  # never read the real key for scripted runs
     return Waku(settings=settings, client=client)
+
+
+def stub_host(monkeypatch, *, agent=None, rebuild_error=None):
+    """Point the resident host at a stub, and return (host, rebuilds).
+
+    A settings save asks the host to rebuild (ReloadMode.AGENT). In a test that
+    must not build a real Waku: `build_from_environment` reads the developer's
+    .env and would reach the network. Tests used to patch
+    `browser_agent.rebuild`; the instance moved to waku/runtime/host.py, so the
+    seam moved with it and this keeps the patch shape in one place.
+
+    `rebuilds` fills as rebuild() is called, which is what a test asserting
+    "this save must not rebuild" needs to read.
+    """
+    from waku.runtime import host as host_module
+
+    if agent is None:
+        agent = SimpleNamespace(tracer=SimpleNamespace(event=lambda *a, **k: None))
+    rebuilds: list = []
+
+    class _StubHost:
+        def current(self):
+            return agent
+
+        def rebuild(self):
+            rebuilds.append(True)
+            return rebuild_error
+
+    stub = _StubHost()
+    monkeypatch.setattr(host_module, "live_host", lambda: stub)
+    monkeypatch.setattr(host_module, "shared_host", lambda: stub)
+    return stub, rebuilds

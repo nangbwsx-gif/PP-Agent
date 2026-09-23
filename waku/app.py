@@ -41,9 +41,15 @@ class Waku:
         self.tracer = Tracer(self.settings)                                # 每个事件写一行 JSONL
 
     def close(self) -> None:
-        """只关外部资源（MCP 子进程）。dashboard 在设置变更后重建 agent 时会调。"""
+        """只关外部资源：MCP 子进程和 SQLite 连接。可重复调用。
+
+        host 在两处会调它：设置变更后换掉旧实例，以及进程退出时。以前只关 MCP
+        子进程、把连接留给操作系统 —— 一个打算常驻的进程不该这么干。
+        """
         if self.mcp_bridge is not None:
             self.mcp_bridge.close()
+        if self.conn is not None:
+            self.conn.close()   # sqlite3 重复 close 是空操作
 
     def respond(self, user_message: str, observer: Observer | None = None,
                 source: str = "cli", stream: bool = False) -> LoopResult:

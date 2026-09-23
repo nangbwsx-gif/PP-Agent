@@ -564,9 +564,11 @@ def apply_integration(key: str, values: Mapping[str, str], clear: tuple[str, ...
         invalidate_health(key)
         _write_updates(updates, clears)
         if integration.reload is ReloadMode.AGENT:
-            from waku.ops import browser_agent
+            from waku.runtime.host import shared_host
 
-            if error := browser_agent.rebuild():
+            # 常驻 Host 持有实例时，重建要落到它身上 —— 这样每个 gateway 的下一轮
+            # 都用上新实例，而不是只有 dashboard 那个旧单例。
+            if error := shared_host().rebuild():
                 raise RuntimeError(error)
         elif integration.reload is ReloadMode.GATEWAY and _gateway_reloader:
             statuses = _gateway_reloader({key})
@@ -634,7 +636,7 @@ def apply_provider(provider: str, *, key: str | None = None, model: str | None =
     """Save provider fields and optionally make that provider active."""
     if provider not in PROVIDERS:
         return ApplyResult(False, error="unknown provider")
-    from waku.ops import browser_agent, catalog
+    from waku.ops import catalog
 
     previous = os.environ.get("WAKU_PROVIDER", "")
     selected = PROVIDERS[provider]
@@ -714,10 +716,13 @@ def apply_provider(provider: str, *, key: str | None = None, model: str | None =
         if changed_updates:
             _write_updates(changed_updates, ())
         affects_active_agent = bool(changed_updates) and (provider == previous or activate)
-        if affects_active_agent and browser_agent.current() is not None:
-            if error := browser_agent.rebuild():
+        from waku.runtime.host import live_host
+
+        live = live_host()
+        if affects_active_agent and live is not None and live.current() is not None:
+            if error := live.rebuild():
                 raise RuntimeError(error)
-            current_agent = browser_agent.current()
+            current_agent = live.current()
             if current_agent is not None:
                 current_agent.tracer.event("config", {"from": {"provider": previous},
                                                        "to": {"provider": provider}})

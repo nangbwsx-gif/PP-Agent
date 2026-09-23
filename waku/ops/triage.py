@@ -19,7 +19,8 @@ forces the graph for ONE message and changes nothing else.
 
 from __future__ import annotations
 
-from waku.ops.browser_agent import agent_lock, get_agent
+from waku.ops import browser_agent
+from waku.runtime.host import shared_host
 
 USAGE = (
     "`/triage` needs a message to route.\n\n"
@@ -49,12 +50,17 @@ def run_triage(observer=None, message: str = "") -> dict:
         if observer:
             observer(kind, ev)
 
-    with agent_lock:
-        agent = get_agent()
-        # _respond_via_graph is the same method the automatic door uses, so
-        # what you watch here IS what runs on every message when the flag is
-        # on — not a demo path that could drift from it.
-        result = agent._respond_via_graph(text, notify, stream=False)
+    # 仍然走串行边界，但这不是一个普通回合，所以用 host.run 而不是 host.ask。
+    # session 一并带上 —— /triage 是 dashboard 的动作，不该跑到别的 gateway 的
+    # 会话上去。
+    #
+    # _respond_via_graph is the same method the automatic door uses, so what you
+    # watch here IS what runs on every message when the flag is on — not a demo
+    # path that could drift from it.
+    result = shared_host().run(
+        lambda agent: agent._respond_via_graph(text, notify, stream=False),
+        session_id=browser_agent.current_session(),
+    )
 
     if result is None:
         return {"digest": ("The graph produced no answer, so a real turn would have "

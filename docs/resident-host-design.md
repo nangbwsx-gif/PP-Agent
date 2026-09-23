@@ -1,10 +1,13 @@
 # Resident host — one process, one Waku, many gateways
 
-Status: proposal. This is a **Proposal** tier change under
+Status: phase 1 SHIPPED 2026-09-23 — the host and the dashboard live in it. See
+§11. Phases 2 and 3 remain proposals.
+
+This is a **Proposal** tier change under
 [conventions §2](context/conventions.md#2-how-much-process-a-change-needs) — it
 decides who owns the Waku instance and changes the gateway-facing contract — so
-it needs a maintainer's yes before any code. [agent-graphs-design.md](agent-graphs-design.md)
-is the precedent for the bar.
+it needed a maintainer's yes before any code, which it got for phase 1 only.
+[agent-graphs-design.md](agent-graphs-design.md) is the precedent for the bar.
 
 Scope: let one long-lived process serve the dashboard and several gateways at
 once, without giving any of them their own Waku.
@@ -44,13 +47,14 @@ own side of the line.
 
 ```python
 class Gateway(Protocol):
-    name: str                      # "wechat"; also the session-id prefix
+    name: str
     def start(self, host: "Host") -> None: ...
     def stop(self) -> None: ...
 
 
 class Host:
-    def ask(self, text: str, *, source: str, observer=None, stream=False) -> LoopResult: ...
+    def ask(self, text: str, *, source: str, session_id: str,
+            observer=None, stream=False) -> LoopResult: ...
     def current(self) -> Waku | None: ...      # read-only peek for status pages
     def rebuild(self) -> str | None: ...       # rebuild for every gateway at once
     def start(self) -> None: ...
@@ -100,15 +104,27 @@ few turns in the prompt. The database rows would still be tagged correctly,
 which makes it worse — the stored transcript would look right while the model
 saw someone else's conversation.
 
-The fix is that the host keeps one session binding per source:
+The fix is that every request names its own session, and the host switches to it
+inside the serial boundary:
 
 ```python
-def ask(self, text, *, source, observer=None, stream=False):
-    with self._turn_lock:
-        agent = self._agent or self._build()
-        agent.session.switch(self._session_id_for(source))
-        return agent.respond(text, observer=observer, source=source, stream=stream)
+def ask(self, text, *, source, session_id, observer=None, stream=False):
+    # ... enqueued, then run on the worker:
+    agent.session.switch(session_id)
+    return agent.respond(text, observer=observer, source=source, stream=stream)
 ```
+
+`session_id` is a required argument rather than something the host derives from
+`source`, for two reasons. A source can legitimately own more than one thread —
+the dashboard already does, since "+ New chat" mints a new id while the source
+stays `dashboard`, and `resume_or_new_session` exists to choose between them.
+And deriving it would put thread policy inside the host, which would then have
+to guess what each gateway means by "its" conversation. A gateway that knows
+which thread a message belongs to says so; a gateway that does not yet have an
+answer is a decision for that gateway.
+
+`source` still travels separately, because it is not a routing key. It is the
+origin tag written to `chat_log.source` and shown in the inbox.
 
 `Session.switch()` already exists and already does the right thing: it sets
 `session_id` and reloads the last `history_turns` from the database. So the
@@ -170,13 +186,13 @@ than through one:
 `host.stop()` calls `gateway.stop()` in reverse. Each gateway owns its own
 transport and its own state:
 
-- **The dashboard** binds its port and serves. Its handler calls
-  `host.ask(..., source="dashboard")`.
+- **The dashboard** binds its port and serves. Its handler resolves its own
+  thread and calls `host.ask(..., source="dashboard", session_id=<that thread>)`.
 - **A WeChat gateway** does the QR login, long-polls in its own thread, and
-  calls `host.ask(..., source="wechat")`, then sends the reply back over the
-  channel. The iLink protocol, its credentials and its cursor stay inside that
-  gateway file. Nothing about it reaches the loop, the memory, the tools or the
-  prompt.
+  calls `host.ask(..., source="wechat", session_id=<that chat's thread>)`, then
+  sends the reply back over the channel. The iLink protocol, its credentials and
+  its cursor stay inside that gateway file. Nothing about it reaches the loop,
+  the memory, the tools or the prompt.
 
 A gateway is responsible for being stop-able: `stop()` must abort whatever
 blocking I/O it owns, because the process will not wait forever for it.
@@ -204,7 +220,35 @@ host.stop()
 and on a normal return. A step that raises does not skip the ones after it —
 shutdown must always reach the connection close.
 
-## 8. What this does to the existing files
+## 8. Behaviour changes that need their own verification
+
+Two parts of this are not a refactor of anything that exists. They add new
+behaviour, and each needs its own deterministic eval before phase 1 is done.
+
+**The queue.** There is no queue today. A bare lock means a second request
+blocks, and whether it or a third one goes next is thread scheduling. The host
+promises three things that are new and separately testable:
+
+- turns run one at a time, and completion order is enqueue order
+- the queue has a bound, and a request arriving at a full queue is refused with
+  a clear answer rather than waiting forever
+- the dashboard can report how many turns are waiting
+
+**Shutdown.** Nothing runs on exit today: no signal handler, no `atexit`, no
+`server_close`, no `agent.close`. Anything waiting on a turn when the process
+stops waits until the process dies. The host promises:
+
+- new requests are refused once stopping begins
+- a request already queued when stop begins either runs or receives an explicit
+  "shutting down" answer, and never waits forever
+- the MCP bridge and the SQLite connection are closed, and the HTTP server is
+  shut down and closed
+
+Both are the kind of change that reads fine in review and still hangs a real
+user, so the evals assert them directly instead of trusting the shape of the
+implementation.
+
+## 9. What this does to the existing files
 
 **`waku/ops/browser_agent.py` — its job moves out.** `_agent`, `agent_lock`,
 `get_agent`, `current` and `rebuild` all become the host's. The module keeps
@@ -232,7 +276,7 @@ to `host.rebuild()`, and `register_gateway_reloader` gets a real implementation
 now that there is a host to call it. The rollback and health-recording logic
 around them does not change.
 
-## 9. What this deliberately does not do
+## 10. What this deliberately does not do
 
 - **It does not run two Waku instances against one `state.db`.** The opposite:
   the dashboard and every gateway in the process share one instance and one
@@ -248,20 +292,25 @@ around them does not change.
   credentials and cursor stay in its own file. The host knows gateways by
   `name`, `start` and `stop`, and nothing else.
 
-## 10. Phasing
+## 11. Phasing
 
-1. **Host, dashboard only.** Extract `browser_agent`'s singleton into
-   `waku/runtime/host.py`, register the dashboard as the first gateway, add the
-   queue, the session binding and the shutdown path. Behaviour must be identical
-   to today: same single turn at a time, same session rotation, same rebuild
-   semantics. The existing dashboard evals are the guard.
+1. **Host, dashboard only — SHIPPED 2026-09-23.** `waku/runtime/host.py` holds
+   the instance, `waku serve` (and `waku dashboard`, unchanged) runs it, and the
+   dashboard registers as its first gateway. The queue, the per-request session
+   binding, the between-turns rebuild and the shutdown path are in, with evals in
+   `evals/deterministic/test_host.py`. `browser_agent.py` is down to the
+   dashboard's own thread policy: `resume_or_new_session`, `rotate_if_idle` and
+   the current-thread pointer. The `Gateway` protocol is deliberately NOT in
+   yet — with one gateway it would be scaffolding, and it arrives with the second.
+   `waku/app.py`'s signatures are unchanged; `close()` now also closes the
+   connection, which a process that outlives every request needs.
 2. **WeChat gateway.** One file, `waku/gateway/wechat.py`, at rung 5 of the
    footprint ladder, wired to the host. The lab experiment in
    `lab/wechat-ilink/` is the protocol reference and stays the on-its-own-terms
-   baseline.
+   baseline. This is also when the `Gateway` protocol earns its place.
 3. **Later, if wanted.** CLI and voice attach to a running host over IPC.
 
-## 11. Decisions taken (flag disagreement before phase 1)
+## 12. Decisions taken (flag disagreement before phase 1)
 
 1. **The host owns the Waku; no gateway may hold one.** Everything else follows
    from this.
@@ -269,9 +318,12 @@ around them does not change.
    and a limit.
 3. **A rebuild is a queue task**, so it lands between turns and never through
    one.
-4. **Sessions are bound per source with the existing `Session.switch()`**, which
-   keeps `app.py` untouched and removes the hand-carried session id in the
-   rebuild path.
-5. **This is Proposal tier.** It changes who owns the instance and the
+4. **Every request names its own `session_id`**, switched with the existing
+   `Session.switch()` inside the serial boundary. The host does not derive it
+   from `source`, which keeps `app.py` untouched and removes the hand-carried
+   session id in the rebuild path.
+5. **The queue and the shutdown path are new behaviour, not a refactor**, so
+   each gets its own deterministic eval (§8).
+6. **This is Proposal tier.** It changes who owns the instance and the
    gateway-facing contract, so it needs a maintainer's yes before phase 1
    starts.

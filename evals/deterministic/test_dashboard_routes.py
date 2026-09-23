@@ -177,3 +177,43 @@ def test_the_bind_switch_follows_the_platform():
     from waku.ops.dashboard import DashboardServer
 
     assert DashboardServer.allow_reuse_address is (sys.platform != "win32")
+
+
+def test_serve_until_signalled_closes_the_socket_and_stops_the_host(monkeypatch):
+    """`serve_forever()` only returns when somebody calls `shutdown()`, and the
+    signal handler in `serve_until_signalled` is that somebody.
+
+    The `finally` around it is the whole shutdown path: close the listening
+    socket, then stop the resident host (refuse new requests, answer the waiting
+    ones, close the MCP bridge and the SQLite connection). Before this landed
+    there was no handler, no `server_close` and no `agent.close` at all, so
+    Ctrl-C left the child process and the database handle to the operating
+    system.
+
+    Driving `shutdown()` from another thread is exactly what the handler does,
+    so this exercises the real path rather than a copy of it.
+    """
+    import socket
+    import threading
+    import time
+
+    from waku.runtime import host as host_module
+
+    stopped = []
+
+    class _StubHost:
+        def stop(self):
+            stopped.append(True)
+
+    monkeypatch.setattr(host_module, "shared_host", lambda: _StubHost())
+
+    server = dashboard.DashboardServer(("127.0.0.1", 0), dashboard.Handler)
+    port = server.server_address[1]
+    threading.Thread(target=lambda: (time.sleep(0.05), server.shutdown()), daemon=True).start()
+
+    dashboard.serve_until_signalled(server)
+
+    assert stopped == [True], "the resident host was never stopped"
+    # The port must be free again: binding it succeeds only if the server let go.
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", port))

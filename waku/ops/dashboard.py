@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -49,17 +50,21 @@ from waku.ops.arena import (
     compare_stream,
     history_response,
 )
-from waku.ops.browser_agent import agent_lock, dash_session, get_agent, maybe_rotate_session
 from waku.ops.catalog import list_models
 from waku.ops.pricing import price_for, usage_summary
 from waku.ops.settings_api import apply_settings, pin_action, settings_info
 from waku.ops.tracing import TraceEncodingError, iter_trace_lines
+from waku.runtime import host as host_module
 
 PORT = 7777
 # The frontend lives in its own files (static/index.html + style.css + app.js),
 # served as-is by this stdlib server — no build step, no framework. Edit those
 # to change the UI; edit this file to change the server/API.
 STATIC = Path(__file__).resolve().parent / "static"
+
+# 本进程唯一的 Waku 由常驻 Host 持有（见 waku/runtime/host.py）。dashboard 只是
+# 它的第一个 gateway：它不自己持有 agent，也不再自己拿锁 —— 排队、顺序、
+# "忙"/"关停"的答复都在 Host 里。
 
 
 def chat(message: str) -> dict:
@@ -103,12 +108,15 @@ def chat_stream(message: str, emit) -> None:
             events.append({"kind": kind, **ev})
         emit(kind, ev)
 
-    with agent_lock:
-        agent = get_agent()
-        maybe_rotate_session(agent)
-        start = datetime.now(UTC)
-        result = agent.respond(message, observer=observer, source="dashboard", stream=True)
-        latency_ms = int((datetime.now(UTC) - start).total_seconds() * 1000)
+    # 会话由 dashboard 自己决定（恢复 / 空闲轮换），然后在 Host 的串行边界内
+    # 绑定并执行。这里既没有锁也没有 agent —— 排队和顺序是 Host 的事。
+    live = host_module.shared_host().current()
+    settings_used = live.settings if live is not None else load_settings()
+    session_id = browser_agent.current_session()
+    start = datetime.now(UTC)
+    result = host_module.shared_host().ask(message, source="dashboard", session_id=session_id,
+                        observer=observer, stream=True)
+    latency_ms = int((datetime.now(UTC) - start).total_seconds() * 1000)
 
     gate = next((e for e in events if e["kind"] == "gate"), None)
     cons = next((e for e in events if e["kind"] == "consolidation"), None)
@@ -128,7 +136,7 @@ def chat_stream(message: str, emit) -> None:
         "iterations": result.iterations,
         "latency_ms": latency_ms,
         # which brain answered — shown per card; a quick graph turn was the small model
-        "model": agent.settings.small_model if quick else agent.settings.model,
+        "model": settings_used.small_model if quick else settings_used.model,
     })
 
 
@@ -432,9 +440,9 @@ def collect() -> dict:
         "all_tables": all_tables,
     }
 
-    # Peek at the shared agent WITHOUT building one — a page load should never
-    # pay for an agent nobody has chatted with yet.
-    live = browser_agent.current()
+    # 这一页不再碰 agent。以前它要"偷看"共享实例才知道当前是哪条会话；现在
+    # 会话是 dashboard 自己的指针（见下面 current_session），所以一次翻页永不
+    # 需要把实例建起来。
 
     # --- graph workflows: topology straight from the engine (never hand-drawn,
     # so the picture can't drift) + quick/full split from the trace events
@@ -486,7 +494,9 @@ def collect() -> dict:
         "chat_pending": conn.execute("SELECT COUNT(*) FROM chat_log WHERE consolidated=0").fetchone()[0],
         "chat_log": rows("SELECT role, content, consolidated, source, session_id, created_at FROM chat_log ORDER BY id DESC LIMIT 80")[::-1],
         "sessions": session_list(conn),
-        "current_session": (live.session.session_id if live is not None else dash_session()),
+        # 当前会话是 dashboard 自己的指针，不再是 agent 上的字段 —— agent 的
+        # session 现在每轮都会被 switch 到请求指定的那条线上。
+        "current_session": browser_agent.dash_session(),
         "consolidate_every": settings.consolidate_every,
         "calendar": rows('SELECT title, start, "end", attendees, created_at FROM calendar_events ORDER BY start'),
         "outbox": outbox,
@@ -588,7 +598,7 @@ def tools_info() -> dict:
             pass
 
     catalog = []
-    live = browser_agent.current()
+    live = host_module.shared_host().current()
     if live is not None:
         mcp["live"] = getattr(live, "mcp_bridge", None) is not None
         tools = list(live.tools._tools.values())
@@ -742,19 +752,23 @@ def session_action(payload: dict) -> dict:
         conn = connect(settings.home)
         sid = payload.get("id") or "default"
         return {"ok": True, "session_id": sid, "history": _thread_history(conn, sid)}
-    with agent_lock:
-        agent = get_agent()
-        if action == "new":
-            sid = datetime.now().strftime("s-%Y%m%d-%H%M%S")
-            agent.session.start_new(sid)
-            return {"ok": True, "session_id": sid, "history": []}
-        if action == "switch":
-            sid = payload.get("id") or "default"
-            agent.session.switch(sid)
-            # Same meta-rich rows as the read-only "history" action, so a
-            # switched thread renders its full turn cards (gate/stats/tools/
-            # model) — not just the text. (These two paths used to disagree.)
-            return {"ok": True, "session_id": sid, "history": _thread_history(agent.conn, sid)}
+    # 「新聊天」和「切换」只改 dashboard 自己的当前会话指针。不用碰 agent，
+    # 也不用建 agent —— Host 每轮会 switch 到请求带的 session_id 上。
+    if action == "new":
+        sid = datetime.now().strftime("s-%Y%m%d-%H%M%S")
+        browser_agent.set_current_session(sid)
+        return {"ok": True, "session_id": sid, "history": []}
+    if action == "switch":
+        sid = payload.get("id") or "default"
+        browser_agent.set_current_session(sid)
+        # 和只读的 "history" 分支同一批行（带 meta），所以切过去的会话能渲染完整
+        # 的回合卡片（gate/耗时/工具/模型），而不只是文字。
+        settings = load_settings()
+        conn = connect(settings.home)
+        try:
+            return {"ok": True, "session_id": sid, "history": _thread_history(conn, sid)}
+        finally:
+            conn.close()
     return {"error": f"unknown action {action}"}
 
 
@@ -1224,9 +1238,40 @@ def main() -> None:
             print(f"port {port} busy, trying {port + 1}…")
             continue
         print(f"Waku dashboard → http://localhost:{port}  (Ctrl-C to stop)")
-        server.serve_forever()
+        serve_until_signalled(server)
         return
     raise SystemExit(f"no free port in {base}–{base + 9}")
+
+
+def serve_until_signalled(server: ThreadingHTTPServer) -> None:
+    """`serve_forever()` 只在 `shutdown()` 时才返回，所以得有人去叫它。
+
+    收到 SIGINT/SIGTERM（Windows 上还有 Ctrl-Break）就退出，而且要退得干净：
+    先停 Host —— 停收新请求、明确答复排队中的、关掉 MCP 子进程和 SQLite 连接
+    —— 再关 HTTP server。以前这里什么都没有：没有信号处理、没有 server_close、
+    也没有 agent.close，Ctrl-C 把 MCP 子进程和数据库句柄留给操作系统。
+
+    `shutdown()` 会阻塞到 `serve_forever` 返回，而信号处理器跑在主线程上、主线程
+    正卡在 `serve_forever` 里 —— 所以必须从另一个线程叫它，否则自己等自己。
+    """
+    def _stop(signum, _frame) -> None:
+        print(f"\nstopping (signal {signum})…")
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            pass  # 非主线程或该平台不支持，不该因此起不来
+
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        host_module.shared_host().stop()
 
 
 if __name__ == "__main__":

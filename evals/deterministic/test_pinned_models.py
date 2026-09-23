@@ -16,6 +16,7 @@ import os
 
 import pytest
 
+from evals.helpers import stub_host
 from waku.ops import catalog
 from waku.ops import settings_api as d
 
@@ -87,10 +88,8 @@ def test_switching_provider_adopts_its_pinned_default(home, monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "k")
     (home / "models.json").write_text(json.dumps({"pinned": ["kimi:kimi-k3"]}))
     from waku import integrations
-    from waku.ops import browser_agent
 
-    monkeypatch.setattr(browser_agent, "rebuild", lambda: None)
-    monkeypatch.setattr(browser_agent, "current", lambda: type("A", (), {"tracer": type("T", (), {"event": lambda *args: None})()})())
+    stub_host(monkeypatch)          # 一次 provider 切换不该真建 Waku
     monkeypatch.setenv("WAKU_PROVIDER", "gemini")
     monkeypatch.setenv("WAKU_MODEL", "gemini-3.5-flash")
     result = integrations.apply_provider("kimi")

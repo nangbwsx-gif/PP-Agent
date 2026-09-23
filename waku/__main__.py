@@ -1,6 +1,8 @@
 """Entrypoints — installed as the `waku` command (and `python -m waku`):
 
   waku                       chat in the terminal (default)
+  waku serve                 the resident process: one Waku, the dashboard as its
+                             first gateway  (--zh / --dev as below)
   waku dashboard             the browser cockpit → localhost:7777
   waku dashboard --zh        同上，但界面是中文（--zh: Chinese interface）
   waku dashboard --dev       同上，但显示开发者页面（图谱、运维、数据库…）
@@ -42,6 +44,17 @@ def main() -> None:
         from waku.gateway.cli import main as cli_main
 
         cli_main()
+    elif args[0] == "serve":
+        # 常驻进程（docs/resident-host-design.md 的 phase 1）：Host 持有唯一的
+        # Waku，dashboard 是它的第一个 gateway。现阶段还没有第二个 gateway，
+        # 所以它跑的就是那个 dashboard —— `serve` 是以后挂更多 gateway 的地方。
+        if "--zh" in args[1:]:
+            os.environ["WAKU_LANG"] = "zh"
+        if "--dev" in args[1:]:
+            os.environ["WAKU_DEV"] = "1"
+        from waku.ops.dashboard import main as serve_main
+
+        serve_main()
     elif args[0] == "dashboard":
         # `waku dashboard --zh` → 中文界面；`--dev` → 显示开发者页面。
         # 两个开关都在这里定死，之后一路不再变。
