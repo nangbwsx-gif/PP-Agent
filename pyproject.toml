@@ -85,6 +85,11 @@ arena = [
     "mem0ai>=2.0",
     "zep-cloud>=2.0",
 ]
+# Optional WeChat gateway: the terminal QR the login needs. Everything else in
+# waku/gateway/wechat.py is stdlib, so this extra is qrcode and nothing more.
+wechat = [
+    "qrcode>=8.0",
+]
 # Optional episodic-memory backend: Notion database
 # Requires >=2.5: the adapter uses the data_sources API (Notion API 2025-09-03).
 notion = [

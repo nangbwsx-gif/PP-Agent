@@ -28,9 +28,9 @@ from __future__ import annotations
 
 import queue
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Self
+from typing import Protocol, Self
 
 DEFAULT_QUEUE_SIZE = 32
 
@@ -50,6 +50,20 @@ class HostBusy(RuntimeError):
 
 class HostStopped(RuntimeError):
     """Host 正在关停或已经关停，请求没有被接受。"""
+
+
+class Gateway(Protocol):
+    """一个 gateway 只拥有一件东西：它自己的传输方式。
+
+    它拿到 Host，**永远不拿 Waku 实例** —— 这样 channel 的协议、凭据和游标
+    就自然地留在它自己那个文件里，进不了 loop、memory、工具或提示词。
+    """
+
+    name: str
+
+    def start(self, host: Host) -> None: ...
+
+    def stop(self) -> None: ...
 
 
 @dataclass
@@ -101,7 +115,8 @@ class Host:
 
     def __init__(self, build: Callable[[], object] | None = None, *,
                  queue_size: int = DEFAULT_QUEUE_SIZE,
-                 stop_timeout: float = SHUTDOWN_JOIN_SECONDS):
+                 stop_timeout: float = SHUTDOWN_JOIN_SECONDS,
+                 gateways: Sequence[Gateway] | None = None):
         self._build_agent = build or build_from_environment
         self._queue: queue.Queue[_Task] = queue.Queue(maxsize=queue_size)
         self._stop_timeout = stop_timeout
@@ -115,6 +130,38 @@ class Host:
         self._started = False
         self._closed = False
         self._worker: threading.Thread | None = None
+        self._gateways: list[Gateway] = list(gateways or ())
+        # 某个 gateway 启动失败的原因，按名字记下来。它绝不能把 Host（也就是
+        # dashboard）一起带走 —— 一个渠道配错了不该让网页打不开。
+        self._gateway_errors: dict[str, str] = {}
+
+    # ------------------------------------------------------------ gateway
+
+    def register(self, gateway: Gateway) -> None:
+        """挂一个 gateway。Host 已经在跑就立刻启动它。"""
+        with self._lock:
+            self._gateways.append(gateway)
+            running = self._started and self._accepting
+        if running:
+            self._start_gateway(gateway)
+
+    def gateway_names(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(g.name for g in self._gateways)
+
+    def gateway_error(self, name: str) -> str:
+        """这个 gateway 启动时挂掉的原因，空字符串表示没问题（或没挂过）。"""
+        with self._lock:
+            return self._gateway_errors.get(name, "")
+
+    def _start_gateway(self, gateway: Gateway) -> None:
+        try:
+            gateway.start(self)
+            with self._lock:
+                self._gateway_errors.pop(gateway.name, None)
+        except Exception as exc:  # 任何异常都不允许往上冒
+            with self._lock:
+                self._gateway_errors[gateway.name] = f"{type(exc).__name__}: {exc}"
 
     # ------------------------------------------------------------ 生命周期
 
@@ -132,6 +179,10 @@ class Host:
             self._accepting = True
         self._worker = threading.Thread(target=self._work, name="waku-host", daemon=True)
         self._worker.start()
+        with self._lock:
+            gateways = list(self._gateways)
+        for gateway in gateways:
+            self._start_gateway(gateway)
 
     def stop(self) -> bool:
         """按顺序关停：停收 → 明确拒绝排队中的请求 → 等当前一轮 → 关资源。
@@ -154,6 +205,19 @@ class Host:
             if not self._accepting:
                 return self._closed
             self._accepting = False
+            gateways = list(reversed(self._gateways))
+
+        # 先停 gateway：它们可能正阻塞在自己的长轮询上，而那是它们自己的 I/O，
+        # 只有它们能中止。跑在它们手里的 `ask()` 要么等到这一轮结束，要么在下面
+        # 被明确拒绝，不会一直挂着。
+        for gateway in gateways:
+            try:
+                gateway.stop()
+            except Exception as exc:
+                with self._lock:
+                    self._gateway_errors[gateway.name] = f"{type(exc).__name__}: {exc}"
+
+        with self._lock:
             rejected = self._drain_locked()
             try:
                 self._queue.put_nowait(_STOP)

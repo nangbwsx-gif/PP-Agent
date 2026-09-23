@@ -14,12 +14,12 @@ known-broken is below, and half of it already has a fix in flight.
 
 The four pillars run: the loop, memory (semantic + episodic + procedural with
 a retrieval gate), tools, and both eval tiers. `waku`, `waku serve`,
-`waku dashboard`, `waku voice`, `waku brief` and `waku connect google` all
-start.
+`waku dashboard`, `waku voice`, `waku brief`, `waku wechat` and
+`waku connect google` all start.
 
 **`waku serve` is the resident process.** One Waku, held by
-`waku/runtime/host.py`, with the dashboard as its first gateway (see
-[resident-host-design.md](resident-host-design.md)). Every request names its own
+`waku/runtime/host.py`, with the dashboard as its first gateway and — when
+`WAKU_WECHAT=1` — the WeChat gateway as its second. Every request names its own
 `source` and `session_id`, the host binds the session inside a serial boundary,
 and turns run one at a time in arrival order. `waku dashboard` still works and
 runs the same process. Settings changes rebuild the one instance between turns;
@@ -27,7 +27,20 @@ a failed rebuild keeps the working instance. Shutdown refuses new requests,
 answers the ones already queued, and closes the MCP bridge, the SQLite
 connection and the listening socket.
 
-**725 deterministic evals pass offline**, with no API key; 38 more skip without
+**The WeChat gateway is off by default** and needs `waku wechat login` (a QR
+scan) before it does anything. Enabled-but-not-logged-in is a normal state. A
+WeChat problem — no network, an expired session, a failed send — is reported and
+retried on the WeChat side only; the browser keeps working. It is text-only,
+one bound account, and it cannot message you first. See
+[commands.md](commands.md#wechat-optional-off-by-default).
+
+**The WeChat side has not been through a real device since it moved out of the
+lab.** The protocol, the login and the round trip were verified live on
+2026-09-23 in `lab/wechat-ilink/`, and every path in `waku/gateway/wechat.py` is
+covered offline by `evals/deterministic/test_wechat_gateway.py`, but nobody has
+scanned a QR with the gateway itself running. Treat it as working-but-unproven.
+
+**753 deterministic evals pass offline**, with no API key; 38 more skip without
 one. On Windows 3 of them fail (temp-file and process assumptions, not this
 checkout) and 2 more need `python -X utf8` to read files with the locale codec
 — see Known broken. CI runs the offline tier on every PR along with

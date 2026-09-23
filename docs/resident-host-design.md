@@ -1,7 +1,7 @@
 # Resident host — one process, one Waku, many gateways
 
-Status: phase 1 SHIPPED 2026-09-23 — the host and the dashboard live in it. See
-§11. Phases 2 and 3 remain proposals.
+Status: phases 1 and 2 SHIPPED 2026-09-23 — the host with the dashboard, then
+the WeChat gateway on it. See §11. Phase 3 remains a proposal.
 
 This is a **Proposal** tier change under
 [conventions §2](context/conventions.md#2-how-much-process-a-change-needs) — it
@@ -330,10 +330,24 @@ around them does not change.
    yet — with one gateway it would be scaffolding, and it arrives with the second.
    `waku/app.py`'s signatures are unchanged; `close()` now also closes the
    connection, which a process that outlives every request needs.
-2. **WeChat gateway.** One file, `waku/gateway/wechat.py`, at rung 5 of the
-   footprint ladder, wired to the host. The lab experiment in
-   `lab/wechat-ilink/` is the protocol reference and stays the on-its-own-terms
-   baseline. This is also when the `Gateway` protocol earns its place.
+2. **WeChat gateway — SHIPPED 2026-09-23.** `waku/gateway/wechat.py` is the
+   second gateway, so the `Gateway` protocol earned its place here as promised:
+   `Host.register()`, and `start()`/`stop()` wrap every call so a broken channel
+   cannot take the process down. It is off unless `WAKU_WECHAT=1`, and being
+   enabled-but-not-logged-in is a state, not an error. One file, one bound
+   account, text only; the iLink protocol, the credentials and the cursor stay
+   inside it. `lab/wechat-ilink/` remains the on-its-own-terms baseline.
+
+   Two orderings are load-bearing and are written out at the top of that file,
+   with evals that assert them directly:
+
+   - **the cursor is saved after the whole batch is handled.** The lab saved it
+     first, which loses every message in the batch if the process dies in the
+     middle. Last means a crash re-delivers; nothing goes missing silently.
+   - **a message is claimed before its turn runs.** Re-delivery is therefore a
+     no-op, so a doubled `create_event` cannot happen. The cost is that a crash
+     between claim and reply leaves that one message unanswered — `waku wechat
+     status` lists it rather than hiding it, and it is not retried.
 3. **Later, if wanted.** CLI and voice attach to a running host over IPC.
 
 ## 12. Decisions taken (flag disagreement before phase 1)

@@ -12,6 +12,9 @@
   waku mcp                   MCP servers, and which account each knows you as
   waku mcp login <name>      sign in again — as someone else, or after expiry
   waku voice                 talk to it (needs the [voice] extra)
+  waku wechat                the WeChat gateway's status (needs WAKU_WECHAT=1)
+  waku wechat login          scan a QR to bind one WeChat account
+  waku wechat logout         forget the credentials and the cursor
   waku brief                 morning briefing (calendar + memory) — as a LOOP
   waku gather                same job as a GRAPH: github, web, calendar and
                              memory fetched together, then one digest
@@ -73,6 +76,10 @@ def main() -> None:
         from waku.connect import cli_main as connect_main
 
         sys.exit(connect_main(args[1:]))
+    elif args[0] == "wechat":
+        from waku.gateway.wechat import cli_main as wechat_main
+
+        sys.exit(wechat_main(args[1:]))
     elif args[0] == "voice":
         from waku.gateway.voice import main as voice_main
 

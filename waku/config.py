@@ -86,6 +86,13 @@ class Settings:
     google_calendar_id: str = field(
         default_factory=lambda: os.getenv("WAKU_GOOGLE_CALENDAR_ID", "") or "primary"
     )
+    # --- gateway
+    # 微信一对一文本 gateway。默认关闭：一个没配好的 channel 不该在每次
+    # `waku serve` 时去连一次外网，也不该在没登录时抱错。
+    # 启用了但没登录是**正常状态**，不是错误 —— `waku wechat status` 会说清楚。
+    wechat: bool = field(
+        default_factory=lambda: os.getenv("WAKU_WECHAT", "") in ("1", "true", "yes")
+    )
     # 通过 `gh` CLI 自身的认证进行只读 GitHub 访问（此处无需令牌）。
     # 默认关闭且有意如此：每个注册的工具都会出现在每个
     # 提示中，而读取 PR 是维护者能力，不是助手能力。

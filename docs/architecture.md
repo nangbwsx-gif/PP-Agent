@@ -15,6 +15,7 @@ flowchart TB
         CLI["cli.py (default)"]
         VOICE["voice.py (wake word)"]
         DASH["ops/dashboard.py"]
+        WECHAT["wechat.py (iLink, one account)"]
     end
 
     GW -->|"ask(source, session_id)"| QUEUE --> AGENT
@@ -104,8 +105,11 @@ friendly view; the **Data** tab shows the raw `state.db` tables.
   running one turn at a time, a bounded queue, and one session bound per request.
   Gateways hold the host, never the instance. See
   [resident-host-design.md](resident-host-design.md).
-- `waku/gateway/` — how text gets in and out: `cli.py`, `voice.py` (wake word)
-  and `ops/dashboard.py`. Gateways only move text.
+- `waku/gateway/` — how text gets in and out: `cli.py`, `voice.py` (wake word),
+  `wechat.py` (the iLink bot, one bound account, off unless `WAKU_WECHAT=1`) and
+  `ops/dashboard.py`. Gateways only move text, and they hold the host rather
+  than the Waku — so a channel's protocol, its credentials and its cursor stay
+  in its own file.
 - `waku/runtime/session.py` — working memory for one turn: SOUL.md, memory
   context and chat history.
 - `waku/loop/agent.py` — the loop. `loop/models.py` — pluggable providers over

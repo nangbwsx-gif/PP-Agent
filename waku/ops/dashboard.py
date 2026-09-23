@@ -1240,6 +1240,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    start_configured_gateways()
     # Port precedence: WAKU_DASHBOARD_PORT, then the conventional PORT (used by
     # deploy platforms and IDE preview panes), then 7777. If it's taken, walk on.
     base = int(os.getenv("WAKU_DASHBOARD_PORT") or os.getenv("PORT") or PORT)
@@ -1253,6 +1254,30 @@ def main() -> None:
         serve_until_signalled(server)
         return
     raise SystemExit(f"no free port in {base}–{base + 9}")
+
+
+def start_configured_gateways() -> None:
+    """把启用了的 gateway 挂到本进程的 Host 上。没启用就什么都不做。
+
+    **这里绝不允许往上抛。** 一个渠道配错了不该把 dashboard 一起带走：
+    `waku serve --zh` 里网页永远能起来，微信连不上只是微信那部分不行。
+    `Host.register` 自己就兜住了 `start()` 的异常并记下原因，所以这里再兜一层
+    只是为了防导入和构造阶段（比如 extra 没装、状态目录建不了）。
+    """
+    try:
+        settings = load_settings()
+        if not settings.wechat:
+            return
+        from waku.gateway import wechat
+
+        gateway = wechat.from_environment()
+        if gateway is None:
+            return
+        host_module.shared_host().register(gateway)
+        print(f"WeChat gateway started (state: {wechat.state_directory()})")
+    except Exception as exc:
+        print(f"WeChat gateway did not start: {type(exc).__name__}: {exc}")
+        print("the dashboard is unaffected — run `waku wechat status` for details")
 
 
 def serve_until_signalled(server: ThreadingHTTPServer) -> None:
