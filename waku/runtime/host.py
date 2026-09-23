@@ -34,8 +34,10 @@ from typing import Self
 
 DEFAULT_QUEUE_SIZE = 32
 
-# 关停时最多等当前这一轮多久。等不到就放弃等待、照关连接 —— 一个卡住的模型
-# 调用不该让 Ctrl-C 变成"去任务管理器杀进程"。
+# 关停时最多等当前这一轮多久。超时后**不关资源**，直接返回 False：关掉一条活
+# 线程正在写的连接会把这一轮拆成两半（chat_log 里只剩用户消息、没有回复），而
+# 进程反正要退出，操作系统会回收描述符和 MCP 子进程。一个卡住的模型调用不该让
+# Ctrl-C 变成"去任务管理器杀进程"。
 SHUTDOWN_JOIN_SECONDS = 30.0
 
 _NOT_RUNNING = "the host is not running; no request was accepted"
@@ -98,9 +100,11 @@ class Host:
     """
 
     def __init__(self, build: Callable[[], object] | None = None, *,
-                 queue_size: int = DEFAULT_QUEUE_SIZE):
+                 queue_size: int = DEFAULT_QUEUE_SIZE,
+                 stop_timeout: float = SHUTDOWN_JOIN_SECONDS):
         self._build_agent = build or build_from_environment
         self._queue: queue.Queue[_Task] = queue.Queue(maxsize=queue_size)
+        self._stop_timeout = stop_timeout
         # 一把锁保护 _seq / _accepting / _pending / _agent。它不保护"正在跑的
         # 那一轮" —— 那是 worker 一个人的事，一次只有一个。
         self._lock = threading.Lock()
@@ -108,29 +112,47 @@ class Host:
         self._seq = 0
         self._pending = 0
         self._accepting = False
+        self._started = False
+        self._closed = False
         self._worker: threading.Thread | None = None
 
     # ------------------------------------------------------------ 生命周期
 
     def start(self) -> None:
-        """起 worker。此时还不建 Waku —— 没人问过话就先别花这个钱。"""
+        """起 worker。此时还不建 Waku —— 没人问过话就先别花这个钱。
+
+        一个 Host 只用一次：stop() 之后再 start() 是空操作。否则一个还在旧
+        worker 里跑着的回合会和新 worker 的回合叠在一起 —— 而"一次一轮"正是
+        整个设计要保的东西。
+        """
         with self._lock:
-            if self._accepting:
+            if self._started:
                 return
+            self._started = True
             self._accepting = True
         self._worker = threading.Thread(target=self._work, name="waku-host", daemon=True)
         self._worker.start()
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
         """按顺序关停：停收 → 明确拒绝排队中的请求 → 等当前一轮 → 关资源。
 
         已经排上队但还没开始的请求**不会**被悄悄丢掉，也不会让它一直挂着：
         `ask()` 会收到 HostStopped 并带着一句人话抛出来。正在跑的那一轮不打断
-        （模型调用没法从外部取消），最多等 SHUTDOWN_JOIN_SECONDS。
+        （模型调用无法从外部取消），最多等 `stop_timeout` 秒。
+
+        **返回值就是超时策略本身**：
+
+          True    worker 真的停了，外部资源（MCP 子进程 + SQLite 连接）已关。
+          False  超过 `stop_timeout` 还没停 —— 这一轮仍在使用那条连接，所以
+                 **什么都不关**。关掉一条活线程正在写的连接，会把这一轮的
+                 写拆成两半（chat_log 里只落用户消息、没有回复），而进程反正
+                 马上要退出，操作系统会回收描述符和子进程。
+
+        重复调用返回同一个答案，不会第二次突然变成 True。
         """
         with self._lock:
             if not self._accepting:
-                return
+                return self._closed
             self._accepting = False
             rejected = self._drain_locked()
             try:
@@ -145,12 +167,17 @@ class Host:
 
         worker, self._worker = self._worker, None
         if worker is not None:
-            worker.join(timeout=SHUTDOWN_JOIN_SECONDS)
+            worker.join(timeout=self._stop_timeout)
+            if worker.is_alive():
+                # 那一轮还在跑。绝不在此时 close() —— 见上面 docstring。
+                return False
 
         with self._lock:
             agent, self._agent = self._agent, None
+            self._closed = True
         if agent is not None:
             _close_quietly(agent)
+        return True
 
     def __enter__(self) -> Self:
         self.start()
@@ -159,7 +186,6 @@ class Host:
     def __exit__(self, *_exc) -> bool:
         self.stop()
         return False
-
     # ---------------------------------------------------------------- 请求
 
     def ask(self, text: str, *, source: str, session_id: str,

@@ -207,18 +207,41 @@ to the operating system. The host fixes that with one ordered path:
 ```
 SIGINT / SIGTERM (and Ctrl-Break on Windows)
       |
-host.stop()
+host.stop()  ->  returns True (clean) or False (a turn overran)
       |  1. set stopping -> ask() refuses new work with a clear error
-      |  2. stop each gateway in reverse order (abort its I/O, send what it can)
-      |  3. drain the queue: run what is already queued, or fail it fast with
-      |     "shutting down" so a waiting gateway can answer its user
-      |  4. close the MCP bridge and the SQLite connection  (Waku.close)
-      |  5. server.shutdown() then server.server_close()
+      |  2. reject everything still queued with an explicit "shutting down"
+      |  3. wait for the running turn, bounded by `stop_timeout` (30s default)
+      |  4. IF it finished: close the MCP bridge and the SQLite connection
+      |     IF it did not: close nothing — see below
+server.server_close()
 ```
+
+**The timeout has one rule: never close a resource a live thread is using.**
+When the running turn overruns `stop_timeout`, `stop()` returns False and
+closes nothing. Closing the SQLite connection under that thread does not corrupt
+the database — sqlite3 raises `Cannot operate on a closed database` — but it can
+split a two-statement write like `log_chat()` in half and leave a user message
+with no reply beside it. The process is exiting anyway: the worker is a daemon
+thread, and the OS reclaims the descriptor and the MCP child. `stop()` therefore
+returns a decision rather than a race — calling it twice gives the same answer —
+and the caller has something concrete to report.
 
 `main()` wraps the serve call in `try/finally` so the same path runs on Ctrl-C
 and on a normal return. A step that raises does not skip the ones after it —
-shutdown must always reach the connection close.
+shutdown must always reach the close.
+
+**Why `server_close()` cannot hang, and why the order still matters.**
+`ThreadingMixIn.server_close()` joins the handler threads it registered, but its
+`_Threads.append()` returns early for daemon threads — CPython's own words are
+"Joinable list of all non-daemon threads". `ThreadingHTTPServer` sets
+`daemon_threads = True`, so a chat handler stuck mid-turn is never joined and
+cannot hold the exit. That inherited flag is the load-bearing part and
+`test_the_server_never_joins_a_handler_on_close` pins it; flipping it was
+measured to drag a 0.9s shutdown out to 5.0s (the length of the stuck turn).
+
+The order is a separate concern. Stopping the host first means a *queued*
+request gets its "shutting down" answer immediately, instead of waiting its turn
+while the listening socket has already gone.
 
 ## 8. Behaviour changes that need their own verification
 
@@ -239,10 +262,13 @@ promises three things that are new and separately testable:
 stops waits until the process dies. The host promises:
 
 - new requests are refused once stopping begins
-- a request already queued when stop begins either runs or receives an explicit
-  "shutting down" answer, and never waits forever
-- the MCP bridge and the SQLite connection are closed, and the HTTP server is
-  shut down and closed
+- a request already queued when stop begins receives an explicit "shutting
+down" answer, and never waits forever
+- the running turn is waited for, but only up to `stop_timeout`; if it overruns,
+  **nothing is closed**, because that thread is still using the connection
+- `stop()` returns True or False so the caller knows which happened, and the
+  same answer on a second call
+- the HTTP server is closed, and it cannot wait on a handler (§7)
 
 Both are the kind of change that reads fine in review and still hangs a real
 user, so the evals assert them directly instead of trusting the shape of the

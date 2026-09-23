@@ -954,6 +954,18 @@ class DashboardServer(ThreadingHTTPServer):
     """
     allow_reuse_address = sys.platform != "win32"
 
+    # 这一行是「关停不会被一个还在跑的回合拖住」的原因，不是装饰。
+    #
+    # `ThreadingMixIn.server_close()` 会 join 已登记的 handler 线程，而登记用的
+    # `_Threads.append()` 对 daemon 线程直接 return（CPython 原话：“Joinable list
+    # of all non-daemon threads”）。所以只要 handler 是 daemon，`server_close()`
+    # 就不会去等一个正卡在 `host.ask()` 上等自己那一轮的请求。
+    #
+    # 实测把它改成 False：`server_close()` 会真的 join，整个关停要等到那一轮自己
+    # 结束为止（测试里 5s 的 gate 超时把整个测试从 0.9s 拖到 5.0s）。那种情况下
+    # Ctrl-C 看起来就像没反应 —— 这正是这个值值钱的地方。
+    daemon_threads = True
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, body: bytes, ctype: str, *, no_cache: bool = False) -> None:
@@ -1246,10 +1258,15 @@ def main() -> None:
 def serve_until_signalled(server: ThreadingHTTPServer) -> None:
     """`serve_forever()` 只在 `shutdown()` 时才返回，所以得有人去叫它。
 
-    收到 SIGINT/SIGTERM（Windows 上还有 Ctrl-Break）就退出，而且要退得干净：
-    先停 Host —— 停收新请求、明确答复排队中的、关掉 MCP 子进程和 SQLite 连接
-    —— 再关 HTTP server。以前这里什么都没有：没有信号处理、没有 server_close、
-    也没有 agent.close，Ctrl-C 把 MCP 子进程和数据库句柄留给操作系统。
+    收到 SIGINT/SIGTERM（Windows 上还有 Ctrl-Break）就退出，而且要退得干净。
+    顺序是有讲究的，**先停 Host，再关 server**：
+
+      `host.stop()` 一叫，排队中的请求立刻拿到明确的拒绝答复。反过来先关 server，
+      那些请求得等自己那一轮轮到了才有答复 —— 监听 socket 都关了还在等，对客户端
+      来说就是“服务没了，但我这条请求没有任何结果”。
+
+      正在跑的那一轮不受顺序影响：能不能不被 `server_close()` 拖住，取决于
+      `DashboardServer.daemon_threads`（见那边的注释）。
 
     `shutdown()` 会阻塞到 `serve_forever` 返回，而信号处理器跑在主线程上、主线程
     正卡在 `serve_forever` 里 —— 所以必须从另一个线程叫它，否则自己等自己。
@@ -1270,8 +1287,16 @@ def serve_until_signalled(server: ThreadingHTTPServer) -> None:
     try:
         server.serve_forever()
     finally:
+        # 1) 先停 Host：拒绝新请求、明确答复排队中的、等当前这一轮到时限。
+        #    返回 False = 还有一轮在跑，所以它**没有**关资源（见 Host.stop）。
+        clean = host_module.shared_host().stop()
+        if not clean:
+            print("a turn is still running — leaving the database connection and "
+                  "MCP child open rather than pulling them out from under it. "
+                  "Exiting anyway.")
+        # 2) 再关监听 socket。handler 是 daemon，所以还在收尾的那个不会把进程
+        #    拖在这里（原因见 DashboardServer.daemon_threads 那段注释）。
         server.server_close()
-        host_module.shared_host().stop()
 
 
 if __name__ == "__main__":

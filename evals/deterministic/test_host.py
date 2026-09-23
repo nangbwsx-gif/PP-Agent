@@ -23,61 +23,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from evals.helpers import ScriptedClient, make_waku, response, text_block
+from evals.helpers import FakeAgent, ScriptedClient, make_waku, response, text_block
 from waku.runtime.host import Host, HostBusy, HostStopped
 
 # ------------------------------------------------------------------ fakes
-
-
-class FakeSession:
-    """The one method the host is allowed to call on a session."""
-
-    def __init__(self):
-        self.current = None
-        self.switched = []
-
-    def switch(self, session_id):
-        self.current = session_id
-        self.switched.append(session_id)
-
-
-class FakeAgent:
-    """A Waku stand-in: records what it was asked, in order, and when.
-
-    `gate` makes a turn block until the test releases it, which is how the queue
-    tests get a deterministic window to enqueue into.
-    """
-
-    def __init__(self, name="agent", gate=None):
-        self.name = name
-        self.session = FakeSession()
-        self.responded = []           # (session_id, text, source), in execution order
-        self.closed = False
-        self.gate = gate
-        self.live = 0
-        self.max_live = 0
-        self._lock = threading.Lock()
-        self.settings = SimpleNamespace(model="m", small_model="sm", provider="p")
-
-    def respond(self, text, observer=None, source="cli", stream=False):
-        with self._lock:
-            self.live += 1
-            self.max_live = max(self.max_live, self.live)
-        try:
-            self.responded.append((self.session.current, text, source))
-            if self.gate is not None:
-                self.gate.wait(5)
-            else:
-                # A window wide enough that an unserialised pair WOULD overlap,
-                # so `max_live == 1` is a real assertion and not an accident.
-                time.sleep(0.02)
-            return SimpleNamespace(reply=f"{self.name}:{text}", tool_calls=[], iterations=1)
-        finally:
-            with self._lock:
-                self.live -= 1
-
-    def close(self):
-        self.closed = True
 
 
 def _gate_skip():
@@ -423,3 +372,123 @@ def test_a_closed_host_does_not_build_an_agent():
     with pytest.raises(HostStopped):
         host.ask("hi", source="s", session_id="1")
     assert not built
+
+
+# ------------------------------------------------------------- shutdown bounds
+
+
+def _wait_for(predicate, seconds=5.0):
+    deadline = time.monotonic() + seconds
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert predicate()
+
+
+def test_stop_reports_clean_and_closes_when_the_turn_finishes_in_time():
+    agent = FakeAgent()
+    host = Host(build=lambda: agent, stop_timeout=5)
+    host.start()
+    host.ask("hi", source="s", session_id="1")
+
+    assert host.stop() is True
+    assert agent.closed is True
+
+
+def test_stop_gives_up_rather_than_closing_under_a_running_turn():
+    """The turn overruns the deadline, so stop() must NOT close the instance: a
+    live thread is still using its connection."""
+    release = threading.Event()
+    agent = FakeAgent(gate=release)
+    host = Host(build=lambda: agent, stop_timeout=0.2)
+    host.start()
+    threading.Thread(target=lambda: host.ask("running", source="s", session_id="1")).start()
+    _wait_for(lambda: bool(agent.responded))
+
+    assert host.stop() is False, "an overrunning turn must not be reported as a clean stop"
+    assert agent.closed is False, "stop() closed the instance a live turn was using"
+
+    release.set()
+
+
+def test_a_second_stop_keeps_the_first_answer():
+    """The result is a decision, not a race: asking again cannot turn an unclean
+    stop into a clean one."""
+    release = threading.Event()
+    agent = FakeAgent(gate=release)
+    host = Host(build=lambda: agent, stop_timeout=0.2)
+    host.start()
+    threading.Thread(target=lambda: host.ask("running", source="s", session_id="1")).start()
+    _wait_for(lambda: bool(agent.responded))
+
+    assert host.stop() is False
+    assert host.stop() is False
+    assert agent.closed is False
+
+    release.set()
+
+
+def test_a_turn_that_overran_can_still_use_its_connection(tmp_path):
+    """The acceptance criterion, made literal.
+
+    After a timed-out stop, the turn that was still running must be able to
+    finish its database write. If stop() had closed the connection underneath
+    it, this raises `Cannot operate on a closed database` — and on a two-INSERT
+    turn like log_chat() it would leave a user row with no reply beside it.
+    """
+    from waku.db import connect
+
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    release = threading.Event()
+    seen: dict = {}
+
+    class _DbAgent(FakeAgent):
+        def __init__(self, conn):
+            super().__init__(gate=release)
+            self.conn = conn
+
+        def respond(self, text, observer=None, source="cli", stream=False):
+            self.responded.append((self.session.current, text, source))
+            self.gate.wait(5)          # overruns the stop deadline below
+            self.conn.execute(
+                "INSERT INTO chat_log (role, content, session_id) VALUES ('user', ?, 's')",
+                (text,),
+            )
+            self.conn.commit()
+            seen["rows"] = self.conn.execute("SELECT COUNT(*) FROM chat_log").fetchone()[0]
+            return SimpleNamespace(reply="ok", tool_calls=[], iterations=1)
+
+    built: dict = {}
+
+    def build():
+        # Built here, on the worker thread — the same way the real builder does.
+        agent = _DbAgent(connect(tmp_path / "home", check_same_thread=False))
+        built["agent"] = agent
+        return agent
+
+    host = Host(build=build, stop_timeout=0.3)
+    host.start()
+    asker = threading.Thread(target=lambda: host.ask("hello", source="s", session_id="s1"))
+    asker.start()
+    _wait_for(lambda: "agent" in built and bool(built["agent"].responded))
+
+    assert host.stop() is False
+    assert built["agent"].closed is False
+
+    release.set()
+    asker.join(5)
+    assert not asker.is_alive()
+    assert seen.get("rows") == 1, "the overrunning turn could not finish its write"
+    # And the connection is still usable afterwards, not a closed handle.
+    assert built["agent"].conn.execute("SELECT COUNT(*) FROM chat_log").fetchone()[0] == 1
+
+
+def test_start_after_stop_does_not_add_a_second_worker():
+    """Two workers would run two turns at once, which is the one thing the host
+    exists to prevent."""
+    host = Host(build=lambda: FakeAgent(), stop_timeout=5)
+    host.start()
+    host.stop()
+    host.start()          # must be a no-op, not a fresh worker
+
+    with pytest.raises(HostStopped):
+        host.ask("hi", source="s", session_id="1")

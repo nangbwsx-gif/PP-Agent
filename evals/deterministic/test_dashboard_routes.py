@@ -22,6 +22,7 @@ import inspect
 
 import pytest
 
+from evals.helpers import FakeAgent
 from waku.ops import dashboard
 
 # Every path the POST router accepts. `/api/compare` (non-streaming) was removed
@@ -169,14 +170,108 @@ def test_a_second_dashboard_cannot_bind_an_occupied_port():
         first.server_close()
 
 
-def test_the_bind_switch_follows_the_platform():
-    """Windows 上必须关掉 reuse-address（那里它允许双绑）；POSIX 上必须留着
-    （那里它只影响 TIME_WAIT，关掉会让刚重启的服务偶尔绑不上）。"""
-    import sys
+def test_the_server_never_joins_a_handler_on_close():
+    """Why `server_close()` cannot hang, pinned so nobody "fixes" it away.
 
+    `ThreadingMixIn.server_close()` joins the handler threads it registered, but
+    its `_Threads.append()` returns early for daemon threads — CPython's own
+    comment calls it "Joinable list of all non-daemon threads". So the inherited
+    `daemon_threads = True` is what makes a mid-turn chat handler unable to hold
+    the exit. Flip either one and `server_close()` starts waiting on a handler
+    that is waiting for its turn, which is where the ordering in
+    `serve_until_signalled` becomes load-bearing.
+    """
     from waku.ops.dashboard import DashboardServer
 
-    assert DashboardServer.allow_reuse_address is (sys.platform != "win32")
+    assert DashboardServer.daemon_threads is True
+
+
+# ------------------------------------------------------------------ shutdown
+
+
+def _wait_for(predicate, seconds=10.0):
+    import time
+
+    deadline = time.monotonic() + seconds
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert predicate()
+
+
+def test_an_http_request_queued_behind_a_turn_still_gets_an_answer(tmp_path, monkeypatch):
+    """Taking the service down must not leave a browser request hanging.
+
+    Both acceptance points at once: the request queued behind the running turn is
+    answered instead of waiting its turn, and that running turn is left alone to
+    finish on a connection that is still open.
+    """
+    import json
+    import socket
+    import threading
+    import urllib.request
+
+    from waku.runtime import host as host_module
+    from waku.runtime.host import Host
+
+    monkeypatch.setenv("WAKU_HOME", str(tmp_path / "home"))
+    release = threading.Event()
+    agent = FakeAgent(gate=release)
+    host = Host(build=lambda: agent, stop_timeout=0.3)
+    monkeypatch.setattr(host_module, "shared_host", lambda: host)
+    monkeypatch.setattr(host_module, "live_host", lambda: host)
+    host.start()      # shared_host() would normally do this; here the host is injected
+
+    server = dashboard.DashboardServer(("127.0.0.1", 0), dashboard.Handler)
+    port = server.server_address[1]
+    serving = threading.Thread(target=lambda: dashboard.serve_until_signalled(server), daemon=True)
+    serving.start()
+
+    def port_is_open():
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except OSError:
+            return False
+
+    _wait_for(port_is_open)
+
+    answers: dict = {}
+
+    def post(text):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/chat/stream",
+            data=json.dumps({"message": text}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                answers[text] = response.read().decode("utf-8", "replace")
+        except Exception as exc:      # recorded, not raised: the point is the answer
+            answers[text] = f"<<{type(exc).__name__}: {exc}>>"
+
+    running = threading.Thread(target=post, args=("running turn",))
+    running.start()
+    _wait_for(lambda: bool(agent.responded))          # the worker is inside turn one
+
+    queued = threading.Thread(target=post, args=("queued turn",))
+    queued.start()
+    _wait_for(lambda: host.pending() == 1)            # the second one is waiting
+
+    # Ctrl-C, from a thread — exactly what the signal handler does.
+    threading.Thread(target=server.shutdown, daemon=True).start()
+    serving.join(15)
+    assert not serving.is_alive(), "the dashboard hung on shutdown"
+
+    queued.join(15)
+    assert not queued.is_alive(), "the queued request hung through shutdown"
+    assert "shutting down" in answers["queued turn"], answers["queued turn"]
+
+    # The turn that was running must still be able to finish, on a live connection.
+    release.set()
+    running.join(15)
+    assert not running.is_alive(), "the running request hung"
+    assert "agent:running turn" in answers["running turn"], answers["running turn"]
+    assert agent.closed is False, "the connection was closed under the live turn"
 
 
 def test_serve_until_signalled_closes_the_socket_and_stops_the_host(monkeypatch):
@@ -203,17 +298,34 @@ def test_serve_until_signalled_closes_the_socket_and_stops_the_host(monkeypatch)
 
     class _StubHost:
         def stop(self):
-            stopped.append(True)
+            stopped.append("host.stop")
+            return True
 
     monkeypatch.setattr(host_module, "shared_host", lambda: _StubHost())
 
     server = dashboard.DashboardServer(("127.0.0.1", 0), dashboard.Handler)
     port = server.server_address[1]
+    real_server_close = server.server_close
+    server.server_close = lambda: (stopped.append("server_close"), real_server_close())[1]
     threading.Thread(target=lambda: (time.sleep(0.05), server.shutdown()), daemon=True).start()
 
     dashboard.serve_until_signalled(server)
 
-    assert stopped == [True], "the resident host was never stopped"
+    assert stopped == ["host.stop", "server_close"], (
+        "the host must be stopped BEFORE the server is closed: server_close() joins "
+        "every handler thread, and a handler waiting for its turn is only released "
+        "by host.stop() rejecting it"
+    )
     # The port must be free again: binding it succeeds only if the server let go.
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", port))
+
+
+def test_the_bind_switch_follows_the_platform():
+    """Windows 上必须关掉 reuse-address（那里它允许双绑）；POSIX 上必须留着
+    （那里它只影响 TIME_WAIT，关掉会让刚重启的服务偶尔绑不上）。"""
+    import sys
+
+    from waku.ops.dashboard import DashboardServer
+
+    assert DashboardServer.allow_reuse_address is (sys.platform != "win32")

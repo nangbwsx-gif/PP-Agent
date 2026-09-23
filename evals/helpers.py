@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -116,3 +118,57 @@ def stub_host(monkeypatch, *, agent=None, rebuild_error=None):
     monkeypatch.setattr(host_module, "live_host", lambda: stub)
     monkeypatch.setattr(host_module, "shared_host", lambda: stub)
     return stub, rebuilds
+
+
+# ------------------------------------------------- the resident host's fakes
+
+
+class FakeSession:
+    """The one method the host is allowed to call on a session."""
+
+    def __init__(self):
+        self.current = None
+        self.switched = []
+
+    def switch(self, session_id):
+        self.current = session_id
+        self.switched.append(session_id)
+
+
+class FakeAgent:
+    """A Waku stand-in: records what it was asked, in order, and when.
+
+    `gate` makes a turn block until the test releases it, which is how the queue
+    tests get a deterministic window to enqueue into.
+    """
+
+    def __init__(self, name="agent", gate=None):
+        self.name = name
+        self.session = FakeSession()
+        self.responded = []           # (session_id, text, source), in execution order
+        self.closed = False
+        self.gate = gate
+        self.live = 0
+        self.max_live = 0
+        self._lock = threading.Lock()
+        self.settings = SimpleNamespace(model="m", small_model="sm", provider="p")
+
+    def respond(self, text, observer=None, source="cli", stream=False):
+        with self._lock:
+            self.live += 1
+            self.max_live = max(self.max_live, self.live)
+        try:
+            self.responded.append((self.session.current, text, source))
+            if self.gate is not None:
+                self.gate.wait(5)
+            else:
+                # A window wide enough that an unserialised pair WOULD overlap,
+                # so `max_live == 1` is a real assertion and not an accident.
+                time.sleep(0.02)
+            return SimpleNamespace(reply=f"{self.name}:{text}", tool_calls=[], iterations=1)
+        finally:
+            with self._lock:
+                self.live -= 1
+
+    def close(self):
+        self.closed = True
