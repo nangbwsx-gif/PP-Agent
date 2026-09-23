@@ -4,8 +4,12 @@
 // 需求。其他人第一次打开就看到"模型竞速""SQL 控制台""发布门禁"，只会觉得自己
 // 装错了东西。
 //
-// 保留（用户模式）：总览、记忆、工具、行为 —— 加上右侧的聊天面板。
-// 隐藏（开发者模式）：网关、循环、图谱、数据库、运维、两个竞速页、模型、连接。
+// 保留（用户模式）：总览、记忆、工具、模型、连接、行为 —— 加上右侧的聊天面板。
+// 隐藏（开发者模式）：网关、循环、图谱、数据库、运维、两个竞速擂台。
+//
+// 模型和连接一开始也在隐藏名单里，那是错的：个人用户本来就要自己选模型、
+// 自己接日历和搜索，这两个页面恰恰是给他用的。真正只有开发者需要的，是
+// trace、SQL 控制台和两个竞速擂台。
 //
 // 为什么切换靠刷新而不是就地重渲染：切换会影响导航、当前页、以及正在跑的
 // 动画和已打开的弹窗。刷新浏览器是最干净的实现，代价只是那一刻的白屏 ——
@@ -21,8 +25,7 @@ const DEV_STORED = (function () {
 const DEV_ON = DEV_STORED !== null ? DEV_STORED === "1" : window.WAKU_DEV === true;
 
 // 只有开发者才需要的页面，按导航项的 data-v 匹配。
-const DEV_PAGES = ["gateway", "loop", "graph", "database", "ops",
-                   "compare", "models", "connections"];
+const DEV_PAGES = ["gateway", "loop", "graph", "database", "ops", "compare"];
 
 function isDevPage(view){
   return DEV_PAGES.indexOf(view) >= 0;

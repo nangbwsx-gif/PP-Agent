@@ -60,11 +60,13 @@ Data flows one way: `refresh()` (main.js) fetches `/api/data` into the global
 
 ## Personal-user mode vs developer mode
 
-The sidebar has thirteen pages. Four of them are for someone who runs this
-itself and reads traces; the other nine assume you will edit `.env` and query
-SQLite.
+The sidebar has thirteen pages. Six of them are for someone who runs this
+itself and reads traces; the other seven are the product surface, including
+Models and Connections — a personal user still has to pick a model and connect
+a calendar or a search key.
 
-- `waku dashboard` — Overview, Memory, Tools, Behaviour, plus the chat dock.
+- `waku dashboard` — Overview, Memory, Tools, Models, Connections, Behaviour,
+  plus the chat dock.
 - `waku dashboard --dev` — all thirteen.
 - Behaviour carries a switch, kept in `localStorage`, and **it beats `--dev`**:
   a user who turns the developer pages off does not get them back on the next

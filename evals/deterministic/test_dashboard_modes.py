@@ -36,7 +36,7 @@ NODE = shutil.which("node")
 #
 # 这是一份刻意写死的清单：改这里等于改产品的对外形态，应该是一次有意识的
 # 决定，而不是顺手加个页面时的副作用。
-PERSONAL_PAGES = {"overview", "memory", "tools", "settings"}
+PERSONAL_PAGES = {"overview", "memory", "tools", "models", "connections", "settings"}
 
 
 def _nav_pages() -> set[str]:
