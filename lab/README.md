@@ -11,6 +11,7 @@ imports from `lab/`, and `lab/` never ships to PyPI.
 | [pi-agent/](pi-agent/README.md) | Who owns an agent's context: the vendor, or you? |
 | [memory-native/](memory-native/README.md) | What do mem0 and Zep do on their own terms, before any comparison with Waku? |
 | [one-memory-every-agent/](one-memory-every-agent/README.md) | Can one memory follow you across Grok Bot, Muse, Claude Code, Codex and the Waku agent? |
+| [wechat-ilink/](wechat-ilink/README.md) | What does WeChat's own bot channel (iLink) give you directly, and does a text round trip survive a restart? |
 
 ## Start a topic
 
