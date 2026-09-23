@@ -61,10 +61,6 @@ class Memory:
         # (semantic/base.py) and is held to it by the conformance suite — which
         # is the whole reason a hosted service can stand in for local SQLite
         # without anything upstream noticing.
-        if settings.semantic_store == "supabase":
-            from waku.memory.semantic.supabase_store import SupabaseFactStore
-
-            return SupabaseFactStore(settings)
         if settings.semantic_store == "mem0":
             from waku.memory.semantic.mem0_store import Mem0FactStore
 
@@ -73,10 +69,6 @@ class Memory:
             from waku.memory.semantic.zep_store import ZepFactStore
 
             return ZepFactStore(settings)
-        if settings.semantic_store == "langmem":
-            from waku.memory.semantic.langmem_store import LangMemFactStore
-
-            return LangMemFactStore(settings)
         return SqliteFactStore(conn)
 
     @staticmethod

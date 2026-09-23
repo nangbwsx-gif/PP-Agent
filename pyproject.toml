@@ -78,18 +78,12 @@ voice-neural = [
     "kokoro>=0.9",
     "soundfile>=0.12",
 ]
-# Optional semantic-memory upgrade path: Supabase pgvector (see launch-rag)
-supabase = [
-    "supabase>=2.0",
-]
 # The Memory arena: hosted memory backends raced against waku's own FTS5 store.
 # Never installed by default — the core is stdlib + anthropic/openai, and these
 # only exist so `make arena` can benchmark them.
 arena = [
     "mem0ai>=2.0",
     "zep-cloud>=2.0",
-    "langmem>=0.0.30",
-    "langgraph>=0.3",
 ]
 # Optional episodic-memory backend: Notion database
 # Requires >=2.5: the adapter uses the data_sources API (Notion API 2025-09-03).

@@ -37,7 +37,7 @@ Good places to add real value:
   row in the dashboard and a case to `evals/deterministic/test_providers.py`.
 - **Gateways** (`waku/gateway/`): receive/send for a new channel (email, Slack, WeChat,
 - **Memory stores** (`waku/memory/semantic/`): match the `add`/`search` interface of
-  `SqliteFactStore`. The Supabase adapter is the reference.
+  `SqliteFactStore`. The `mem0_store.py` adapter is the reference.
 - **Tools** (`waku/tools/`): a new capability the agent can call. Follow `calendar.py` and the
   `new-tool` skill — schema, safe execution, honest output, and a deterministic eval.
 

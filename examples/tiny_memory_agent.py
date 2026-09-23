@@ -25,8 +25,8 @@ frame:
     3. answer    — one call, those facts, no tools
 
 It reads the SAME store as your live agent (`WAKU_SEMANTIC_STORE` picks the
-backend: sqlite, mem0, zep, supabase, langmem). It only ever reads — nothing
-here writes, consolidates, or deletes.
+backend: sqlite, mem0, zep). It only ever reads — nothing here writes,
+consolidates, or deletes.
 
 Run it next to `make run` and compare the token counts. That difference is the
 cost of a tool the question never needed.

@@ -28,7 +28,7 @@ flowchart TB
     subgraph MEM["Memory — waku/memory/"]
         GATE{{"retrieval_gate.py<br/>'does this turn need memory?'"}}
         PROC["procedural/ — SKILL.md<br/>how to act"]
-        SEM["semantic/ — facts (FTS5,<br/>or Supabase pgvector)"]
+        SEM["semantic/ — facts (FTS5,<br/>mem0 or Zep)"]
         EPI["episodic/ — dated events"]
         CONS{{"consolidation.py<br/>'only after N new chats'"}}
         DB[("state.db — one SQLite file")]

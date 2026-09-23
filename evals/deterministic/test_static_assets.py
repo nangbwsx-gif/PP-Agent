@@ -57,9 +57,8 @@ def test_connection_display_groups_stay_in_product_order():
     rather than left to whatever the object literal happens to say.
 
     "Memory", not "Storage": the registry group is called "Memory & Storage" and
-    the display map used to keep the wrong half. Notion is the episodic store,
-    Supabase the semantic one, and every hosted memory service that joins them
-    is semantic too — none of it is generic storage.
+    the display map used to keep the wrong half. Notion is the episodic store and
+    the hosted semantic backends are semantic too — none of it is generic storage.
 
     Since the Chinese interface landed, the group names may be wrapped in t(),
     so this reads the quoted names out of the array in order instead of matching

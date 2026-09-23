@@ -91,9 +91,7 @@ def build() -> list:
     e += S.card(1680, 275, 940, "WAKU_SEMANTIC_STORE = ...",
                 "sqlite      rows + FTS5 keyword          (default)\n"
                 "mem0        rows + vector, LLM decides add/update/delete\n"
-                "zep         temporal graph, edges carry validity\n"
-                "langmem     whatever store YOU bring; the manager is the product\n"
-                "supabase    rows + pgvector, textbook RAG, no manager at all",
+                "zep         temporal graph, edges carry validity",
                 color="red")
 
     e += S.card(1680, 490, 940, "what a swap does NOT change",
@@ -118,10 +116,8 @@ def build() -> list:
 
     # the runnable proof, mapped to the boxes above it — this is what gets filmed
     e += S.card(1680, 1075, 940, "and here it is, runnable — lab/memory-native/",
-                "langmem_native.py   THE MANAGER · Job 1    3 sentences in, 2 memories out\n"
                 "mem0_native.py      THE MANAGER · Jobs 1+2  add/update/del/noop, superseded\n"
                 "zep_native.py       THE STORE · graph       INVALID from <timestamp>\n"
-                "supabase_native.py  THE STORE · vector      and NO manager at all\n"
                 "tiny_memory_agent.py  40 lines, no tools — the store with nothing around it")
 
     e += S.card(1680, 1280, 940, "and the rig that runs all of them",
@@ -138,8 +134,7 @@ def build() -> list:
                         "graph — and deleting every user never clears it."))
 
     e.append(S.source_label(60, 1480,
-                            "measured 2026-08-13 against mem0ai 2.0.17 · zep-cloud 3.27.0 · "
-                            "langmem 0.0.30 · langgraph 1.2.10"))
+                            "measured 2026-08-13 against mem0ai 2.0.17 · zep-cloud 3.27.0"))
     e.append(S.watermark(2400, 1480))
     return e
 

@@ -608,7 +608,7 @@ def tools_info() -> dict:
                     episode_store = _get_notion_store()
             mem = Memory(conn, settings, None, episode_store=episode_store)
         except Exception:
-            # A misconfigured optional backend (notion/supabase) must not take
+            # A misconfigured optional backend (notion/mem0/zep) must not take
             # the dashboard down — drop the memory-admin tools from the
             # display-only catalog instead.
             mem = None
@@ -644,7 +644,7 @@ def tools_info() -> dict:
 
 
 def run_query(payload: dict) -> dict:
-    """A tiny read-only SQL console (the Supabase-editor idea, scoped down).
+    """A tiny read-only SQL console (a hosted DB console, scoped down).
     Opens state.db in read-only mode so a write can't slip through, and only
     accepts a single SELECT/WITH statement. Caps at 200 rows."""
     sql = (payload.get("sql") or "").strip().rstrip(";").strip()

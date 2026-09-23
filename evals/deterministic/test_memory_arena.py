@@ -448,7 +448,7 @@ def test_an_unreachable_judge_leaves_the_heuristic_verdict_alone(monkeypatch, tm
 
 
 def test_the_judge_overrules_a_phrase_the_list_never_had(monkeypatch, tmp_path):
-    """The live miss: LangMem replied "Nothing shared about Pikachu's food
+    """The live miss: a store replied "Nothing shared about Pikachu's food
     preferences" — a correct refusal — and scored INVENTED, because _REFUSALS
     holds "nothing about" and not "nothing shared"."""
     fx = {"tracks": {"t": {"label": "T", "seed": ["s"], "probes": [
@@ -838,7 +838,7 @@ def test_contestants_run_in_parallel(tmp_path, monkeypatch):
     _FakeWaku.settles = True
     monkeypatch.setattr(waku.app, "Waku", _FakeWaku)
     _offline(monkeypatch)
-    arena.run_arena(["sqlite", "mem0", "langmem"], "t", lambda k, e: None, fixture=fx)
+    arena.run_arena(["sqlite", "mem0", "zep"], "t", lambda k, e: None, fixture=fx)
 
     assert overlap["max"] > 1, (
         f"contestants must overlap in time; peak concurrency was {overlap['max']}"

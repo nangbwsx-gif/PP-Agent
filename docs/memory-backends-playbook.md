@@ -13,8 +13,6 @@ that Waku's view flattens away, and how to clean up after a benchmark run.
 |---|---|---|
 | Mem0 | [app.mem0.ai](https://app.mem0.ai) → Memories | its extraction decisions, per-memory history |
 | Zep | [app.getzep.com](https://app.getzep.com) → your project → Graph | the entity/edge graph and validity intervals |
-| LangMem | **none — it is a library, not a service** | nothing; there is no server to look at |
-| Supabase | your project → Table editor → the vector table | raw rows and embeddings |
 | sqlite | Waku's own **Memory** page, or `.waku/state.db` | nothing — this one is fully visible already |
 
 ---
@@ -29,7 +27,6 @@ partition per run.
 |---|---|---|
 | Mem0 | `MEM0_USER_ID` | `waku` |
 | Zep | `ZEP_USER_ID` | `waku` |
-| LangMem | *(namespace is fixed in code)* | — |
 
 If a console looks empty, check this first. Filtering by the wrong user id looks
 exactly like "nothing was stored", and those two things mean opposite things.
@@ -76,32 +73,6 @@ where you can see it.
 - **Episodes ≠ what you get back.** Search returns Zep's rendering of an edge or
   node, not the sentence you sent. Answers read differently from other backends
   even when equally correct.
-
----
-
-## LangMem — there is no console
-
-LangMem is a **library**, not a hosted service, and this trips people up because
-it sits in the same list as two products with dashboards.
-
-- **Without** `WAKU_LANGMEM_POSTGRES`, it runs LangGraph's `InMemoryStore` —
-  memory inside the Python process. When the dashboard restarts, it is gone.
-  There is nothing to open, and nothing to clean up.
-- **With** `WAKU_LANGMEM_POSTGRES=postgresql://…`, it uses `PostgresStore`, and
-  "viewing your memories" means querying that database directly.
-
-This is also why the Arena's store card shows LangMem as unreadable rather than
-as "0 facts" — every read would construct a fresh empty store, and reporting
-that as zero would be a false statement about an empty store instead of a true
-one about an unreadable one.
-
----
-
-## Supabase — your project's table editor
-
-Open the project → **Table editor** → the table named by `SUPABASE_TABLE`. Rows
-are visible directly, embeddings included. It is the most transparent of the
-hosted options: what you see is what the adapter wrote.
 
 ---
 

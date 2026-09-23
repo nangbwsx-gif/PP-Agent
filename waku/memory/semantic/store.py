@@ -3,7 +3,7 @@
 The Hermes insight from the whiteboard: "keyword top-k, no embedding". For a
 single user's facts, ranked keyword search (BM25) is fast, fully local, and —
 crucially for teaching — you can read the whole index with sqlite3.
-Want vectors? Set WAKU_SEMANTIC_STORE=supabase (see supabase_store.py).
+Want a hosted store instead? Set WAKU_SEMANTIC_STORE=mem0 or zep.
 """
 
 from __future__ import annotations

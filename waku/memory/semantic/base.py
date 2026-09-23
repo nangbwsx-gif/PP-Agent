@@ -1,12 +1,12 @@
 """The contract every semantic-memory backend has to honour.
 
 Waku is meant to be indifferent to *where* facts live — SQLite on your laptop,
-pgvector in Supabase, a hosted memory API. Everything upstream just says "store
+a hosted vector store, a hosted memory API. Everything upstream just says "store
 this" and "find that". That indifference only works if every backend can do the
 same six things, and until this file existed, nothing checked.
 
-It didn't check, so it broke. `SqliteFactStore` implemented six methods;
-`SupabaseFactStore` implemented two. Switching backends then produced three
+It didn't check, so it broke. `SqliteFactStore` implemented six methods; the
+backend added next implemented two. Switching backends then produced three
 different failures, and the first one is the kind Waku keeps shipping:
 
   * `list()`      → AttributeError, dashboard memory page 500s
@@ -26,9 +26,9 @@ the conformance suite in evals/deterministic/test_fact_store_conformance.py
 runs against *every* backend, so a store that can't do the job fails in CI
 instead of in front of a user.
 
-Ids are `int | str` on purpose. SQLite rows are integers, but the Supabase
-table is keyed by a `chunk_id` string (`fact-a1b2c3…`) inherited from
-launch-rag, and a hosted API will hand back whatever it likes. The episodic
+Ids are `int | str` on purpose. SQLite rows are integers, but a hosted table
+may key them with a `chunk_id` string (`fact-a1b2c3…`), and a hosted API will
+hand back whatever it likes. The episodic
 side already settled this — `memory_admin.py` coerces by shape — so the
 semantic side matches rather than inventing a second convention.
 """
@@ -54,8 +54,8 @@ def env_or(name: str, default: str) -> str:
     """
     return os.getenv(name, "").strip() or default
 
-# A row id as its backend chose to express it: sqlite counts, Supabase and
-# hosted APIs hand out opaque strings. Never parse it — pass it back verbatim.
+# A row id as its backend chose to express it: sqlite counts, hosted APIs hand
+# out opaque strings. Never parse it — pass it back verbatim.
 FactId = int | str
 
 

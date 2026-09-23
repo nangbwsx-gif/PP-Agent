@@ -3,7 +3,7 @@
     pip install 'waku-agent[arena]'
     WAKU_SEMANTIC_STORE=mem0   MEM0_API_KEY=m0-...
 
-Waku's own store is FTS5 keyword search; Supabase is embeddings you host. Mem0
+Waku's own store is FTS5 keyword search; Zep is a temporal graph. Mem0
 is a memory service: you hand it text, it decides what is worth keeping, and it
 retrieves semantically. Having all three behind `FactStore` is what makes the
 Memory arena a fair fight — one agent, one model, one loop, and the only thing

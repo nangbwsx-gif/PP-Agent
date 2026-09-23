@@ -42,7 +42,7 @@ function dbQueryView(){
     <div id="qout"></div>`;
 }
 
-// --- read-only SQL console (item: "a simple query editor like Supabase")
+// --- read-only SQL console (item: "a simple query editor like a hosted DB console")
 function qFill(sql){ const b=document.getElementById("sqlbox"); if(b){ b.value=sql; runQuery(); } }
 async function runQuery(){
   editing = true;   // keep the 5s refresh from wiping the query + results
@@ -269,8 +269,8 @@ function stProvider(){ return (D.settings || {}).provider || "anthropic"; }
 const CONNECTION_GROUPS = ["Channels", "Productivity", "Memory", "Tools"];
 // "Memory", not "Storage". The registry already calls this group "Memory &
 // Storage"; the display map was dropping the half that says what these
-// actually are. Notion is the episodic store, Supabase the semantic one, and
-// every hosted memory service that joins them is semantic too — none of it is
+// actually are. Notion is the episodic store and the hosted semantic backends
+// are semantic too — none of it is
 // generic storage, and Memory is one of the four pillars the rest of the
 // dashboard is organised around.
 const CONNECTION_GROUP_MAP = {

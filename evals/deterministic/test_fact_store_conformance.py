@@ -1,8 +1,8 @@
 """DETERMINISTIC EVAL — every semantic-memory backend, held to the same contract.
 
 This suite exists because the contract was never written down, so the second
-backend silently didn't meet it. `SqliteFactStore` had six methods,
-`SupabaseFactStore` had two, and `WAKU_SEMANTIC_STORE=supabase` therefore
+backend silently didn't meet it. `SqliteFactStore` had six methods; the hosted
+backend added next had two, and `WAKU_SEMANTIC_STORE=<that backend>` therefore
 broke the dashboard's memory page, the manage_memory tool's update and delete
 — and worst of all made `search_with_ids` return `[]` through a
 `hasattr(...) else []` guard, so the agent told users a fact didn't exist while
@@ -19,10 +19,10 @@ checkable Protocol verifies the methods are PRESENT — which is exactly the
 failure we had. It cannot check signatures or behaviour, so the rest of the
 file does that by exercising them.
 
-Offline by default: SQLite in tmp_path, no keys, no network. Supabase joins the
-parametrization only when you opt in explicitly (see `_supabase_store`), because
-its `add()` calls OpenAI for embeddings and costs real money — `make gate` must
-stay green for a contributor with no accounts.
+Offline by default: SQLite in tmp_path, no keys, no network. The hosted stores
+join the parametrization only when you opt in explicitly (see `_mem0_store`),
+because their `add()` writes to a real paid account — `make gate` must stay
+green for a contributor with no accounts.
 """
 
 from __future__ import annotations
@@ -41,24 +41,11 @@ def _sqlite_store(tmp_path):
     return SqliteFactStore(connect(tmp_path))
 
 
-def _supabase_store(tmp_path):
-    """Opt-in only. Needs a Supabase project AND an OpenAI key (embeddings are
-    billed per call), so it is gated on an explicit env var rather than on the
-    credentials happening to be present — a maintainer with a populated .env
-    should not start paying for embeddings by running the test suite."""
-    if os.getenv("WAKU_TEST_SUPABASE") != "1":
-        pytest.skip("set WAKU_TEST_SUPABASE=1 (plus SUPABASE_* and OPENAI_API_KEY) to include it")
-    from waku.config import Settings
-    from waku.memory.semantic.supabase_store import SupabaseFactStore
-
-    return SupabaseFactStore(Settings(home=tmp_path))
-
-
 def _mem0_store(tmp_path):
-    """Opt-in only, same reasoning as Supabase: this one talks to a paid hosted
-    service and writes real memories into a real account. A maintainer running
-    the suite must not start filling somebody's Mem0 workspace with test facts
-    about Priya's meeting preferences."""
+    """Opt-in only: this one talks to a paid hosted service and writes real
+    memories into a real account. A maintainer running the suite must not start
+    filling somebody's Mem0 workspace with test facts about Priya's meeting
+    preferences."""
     if os.getenv("WAKU_TEST_MEM0") != "1":
         pytest.skip("set WAKU_TEST_MEM0=1 (plus MEM0_API_KEY) to include it")
     from waku.config import Settings
@@ -76,21 +63,7 @@ def _zep_store(tmp_path):
     return ZepFactStore(Settings(home=tmp_path))
 
 
-def _langmem_store(tmp_path):
-    """Needs no account — LangMem is a toolkit, not a service — but semantic
-    search still bills OpenAI for embeddings, so it stays opt-in like the rest.
-    Without the index the store is a plain dict and the tests would pass while
-    measuring nothing."""
-    if os.getenv("WAKU_TEST_LANGMEM") != "1":
-        pytest.skip("set WAKU_TEST_LANGMEM=1 (plus OPENAI_API_KEY) to include it")
-    from waku.config import Settings
-    from waku.memory.semantic.langmem_store import LangMemFactStore
-
-    return LangMemFactStore(Settings(home=tmp_path))
-
-
-BACKENDS = {"sqlite": _sqlite_store, "supabase": _supabase_store, "mem0": _mem0_store,
-            "zep": _zep_store, "langmem": _langmem_store}
+BACKENDS = {"sqlite": _sqlite_store, "mem0": _mem0_store, "zep": _zep_store}
 
 
 @pytest.fixture(params=list(BACKENDS), ids=list(BACKENDS))
@@ -99,7 +72,7 @@ def store(request, tmp_path):
 
 
 def test_the_backend_declares_every_method_the_contract_requires(store):
-    """THE regression. `SupabaseFactStore` shipped missing four of the six and
+    """THE regression. The hosted backend shipped missing four of the six and
     nothing anywhere noticed until a user switched backends."""
     assert isinstance(store, FactStore), (
         f"{type(store).__name__} does not satisfy the FactStore protocol — missing: "

@@ -1,7 +1,7 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "waku/ops/whiteboard",
+  "source": "scripts/whiteboard",
   "elements": [
     {
       "id": "txt-0001",
@@ -1856,13 +1856,13 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "SEMANTIC\nfacts \u00b7 user profile\nSQLite FTS5 / Supabase",
+      "text": "SEMANTIC\nfacts \u00b7 user profile\nSQLite FTS5 / mem0 / Zep",
       "fontSize": 16,
       "fontFamily": 5,
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "rec-0051",
-      "originalText": "SEMANTIC\nfacts \u00b7 user profile\nSQLite FTS5 / Supabase",
+      "originalText": "SEMANTIC\nfacts \u00b7 user profile\nSQLite FTS5 / mem0 / Zep",
       "lineHeight": 1.25
     },
     {

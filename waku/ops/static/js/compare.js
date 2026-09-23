@@ -546,10 +546,10 @@ async function runMemoryArena(seedOnly){
 }
 
 // Which stores to race — asked of the SERVER, not decided here.
-// This used to be a hardcoded ["mem0", "supabase"] filtered against the
-// connections list, written before Zep and LangMem existed. Both were
-// configured, both were silently dropped from every race, and the button
-// cheerfully said "Race 2 stores" as though that were the whole field. A list
+// This used to be a hardcoded list filtered against the connections list, so
+// any backend it did not name was configured, silently dropped from every
+// race, and the button cheerfully said "Race 2 stores" as though that were the
+// whole field. A list
 // of backends maintained in two languages drifts the moment one is added;
 // waku/ops/memory_arena.py::_available_backends is now the only one.
 function maBackends(){

@@ -86,7 +86,7 @@ def build_elements() -> list[dict]:
                       color=S.PAL["green"][1]))
 
     a(S.labeled_box(830, 755, 280, 130,
-                    "SEMANTIC\nfacts · user profile\nSQLite FTS5 / Supabase",
+                    "SEMANTIC\nfacts · user profile\nSQLite FTS5 / mem0 / Zep",
                     color="green", size=S.FS_BODY))
     a(S.labeled_box(830, 925, 280, 130,
                     "EPISODIC\ndated events · past chats\nSQLite / Notion",

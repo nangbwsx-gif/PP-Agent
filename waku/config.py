@@ -72,7 +72,7 @@ class Settings:
     # 仅在 N 次新交换后整合（将聊天提炼为持久事实）。
     consolidate_every: int = field(default_factory=lambda: int(os.getenv("WAKU_CONSOLIDATE_EVERY", "6")))
     retrieval_top_k: int = field(default_factory=lambda: int(os.getenv("WAKU_RETRIEVAL_TOP_K", "4")))
-    # 'sqlite'（默认，零配置）或 'supabase'（pgvector 升级路径——参见 launch-rag）。
+    # 'sqlite'（默认，零配置）或 'mem0' / 'zep'（托管后端——见 docs/memory-backends-playbook.md）。
     semantic_store: str = field(default_factory=lambda: os.getenv("WAKU_SEMANTIC_STORE", "sqlite"))
     # 'sqlite'（默认，零配置）或 'notion'（片段存放在 Notion 数据库中）。
     episodic_store: str = field(default_factory=lambda: os.getenv("WAKU_EPISODIC_STORE", "sqlite"))

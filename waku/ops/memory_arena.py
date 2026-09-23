@@ -184,7 +184,7 @@ def _has(haystack: str, needles) -> bool:
 # rests on a phrase list that cannot be complete. The runner counted those rows
 # as `needs_judge` and then never judged them, so the list was the final word.
 #
-# It got one wrong in the first honest race: LangMem answered "Nothing shared
+# It got one wrong in the first honest race: a store answered "Nothing shared
 # about Pikachu's food preferences" — a correct refusal — and scored INVENTED,
 # because _REFUSALS holds "nothing about" and not "nothing shared". INVENTED is
 # the headline number, and that is a public accusation against someone else's
@@ -509,8 +509,8 @@ def run_arena(backends: list[str], track: str, emit, fixture: dict | None = None
                                              app.settings.small_model, 1,
                                              app.memory.facts, app.memory.episodes)
 
-            # 3. WAIT FOR THE STORE TO BECOME SEARCHABLE. sqlite and LangMem
-            #    return instantly; the hosted two are eventually consistent and
+            # 3. WAIT FOR THE STORE TO BECOME SEARCHABLE. sqlite returns
+            #    instantly; the hosted two are eventually consistent and
             #    both understate it. mem0 has no readiness signal and measured
             #    14s to queryable; Zep's per-add `processed` wait was passing
             #    while the graph still held zero matching nodes. Probing there
@@ -846,10 +846,9 @@ def _span(rows: list[dict]) -> str:
 def _store_note(key: str) -> str:
     """Why a store's contents cannot be listed, when that is the case.
 
-    LangMem without Postgres is LangGraph's InMemoryStore, and every read here
-    constructs a fresh one — so it would report "0 facts" forever. That is a
-    false statement about an empty store rather than a true one about an
-    unreadable one, and the difference is the whole point of this page.
+    Reporting "0 facts" for a store that cannot be read back is a false
+    statement about an empty store rather than a true one about an unreadable
+    one, and the difference is the whole point of this page.
     """
     if key == CONTROL:
         # The control is a contestant, not a backend. It is told nothing and
@@ -862,9 +861,6 @@ def _store_note(key: str) -> str:
         return ("told nothing, by design — there is no store behind this one. "
                 "It exists so a probe it still passes can be flagged as a "
                 "question that never needed memory.")
-    if key == "langmem" and not os.getenv("WAKU_LANGMEM_POSTGRES", "").strip():
-        return ("in-memory store — contents live inside the process that wrote them "
-                "and cannot be read back here. Set WAKU_LANGMEM_POSTGRES to persist.")
     return ""
 
 
@@ -891,6 +887,6 @@ def _available_backends() -> list[str]:
     # write — minutes where the others take milliseconds — so putting it in the
     # middle means the fast columns sit unread behind it while it finishes.
     # Order here is the order the columns appear.
-    order = ("mem0", "langmem", "supabase", "zep")
+    order = ("mem0", "zep")
     # CONTROL last: it is the integrity check, not a contestant you rank.
     return ["sqlite", *[k for k in order if k in ready], CONTROL]

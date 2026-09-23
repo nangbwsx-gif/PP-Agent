@@ -5,10 +5,8 @@
 
 WHY THIS EXISTS
 
-sqlite and LangMem need no cleanup. Every Arena contestant runs in a throwaway
-temp home, so a race never opens `.waku/`, and LangMem's default store is a
-dict that dies with the process. Both start clean whether you ask them to or
-not.
+sqlite needs no cleanup. Every Arena contestant runs in a throwaway temp home,
+so a race never opens `.waku/` — it starts clean whether you ask it to or not.
 
 The hosted two do not. mem0 and Zep are keyed by a user id on YOUR account, so
 every race and every quickstart run piles up in the same place, and by the

@@ -116,11 +116,6 @@ def build() -> list:
                 "shape        TEMPORAL GRAPH — entities, edges, validity intervals\n"
                 "retrieval    vector over nodes + traversal\n"
                 "maintenance  invalidate with a time range — never delete")
-    e += S.card(1680, 755, 980, "Supabase pgvector",
-                "shape        rows\n"
-                "retrieval    vector similarity (textbook RAG)\n"
-                "maintenance  none — append forever")
-
     e += S.card(1680, 915, 980, "and the one nobody does",
                 "Every system here consolidates FORWARD-ONLY, on the critical path.\n"
                 "So it only ever sees the recent window — it cannot merge duplicates\n"
@@ -178,8 +173,7 @@ def build() -> list:
                 color="red")
 
     e.append(S.source_label(60, 1360,
-                            "measured 2026-08-13 against mem0ai 2.0.17 · zep-cloud 3.27.0 · "
-                            "langmem 0.0.30 · langgraph 1.2.10"))
+                            "measured 2026-08-13 against mem0ai 2.0.17 · zep-cloud 3.27.0"))
     e.append(S.watermark(2440, 2150))
     return e
 

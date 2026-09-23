@@ -1,10 +1,10 @@
-# Four memory backends, each on its own terms
+# Two memory backends, each on its own terms
 
-Four scripts. Each one uses a single memory product the way its own docs tell
-you to, with **no waku, no framework, and no shared interface**. Roughly 60
-lines each.
+Two scripts, plus one that runs bare. Each uses a single memory product the way
+its own docs tell you to, with **no waku, no framework, and no shared
+interface**. Roughly 60 lines each.
 
-They exist because waku's Arena tab does the opposite. The Arena drives all of
+They exist because waku's Arena tab does the opposite. The Arena drives both of
 these through one `FactStore` contract so it can score them fairly — and that
 contract is exactly what hides what makes each one different. The clearest
 case: to satisfy "a write must always store", the Arena calls mem0's `add()`
@@ -15,20 +15,19 @@ quite different once you have seen what it flattened.
 
 ## The question
 
-What does each memory product (mem0, Zep, LangMem, Supabase pgvector) actually do
-when you use it the way its own docs say, before any comparison with Waku?
+What does each memory product (mem0, Zep) actually do when you use it the way
+its own docs say, before any comparison with Waku?
 
 ## What we connect
 
 Nothing from Waku. Each script talks to one product through that product's own SDK,
 so each one is judged on its own terms first.
 
-Verified against: mem0ai 2.0.17, zep-cloud 3.27.0, langmem 0.0.30 + langgraph 1.2.10, 2026-08-12.
-`supabase_native.py` has not been run by us.
+Verified against: mem0ai 2.0.17, zep-cloud 3.27.0, 2026-08-12.
 
-## The five beats, identical in all four
+## The five beats, identical in both
 
-Every file does the same things in the same order, so you can put two of them
+Every file does the same things in the same order, so you can put the two of them
 side by side:
 
 1. **connect** — the platform's own idiom, not an adapter
@@ -52,19 +51,17 @@ the folder, and it is where they stop being interchangeable.
 
 ```bash
 uv pip install -e '.[arena]'
-python lab/memory-native/langmem_native.py
+python lab/memory-native/mem0_native.py
 ```
 
 Each script loads your repo-root `.env`, so no exports are needed. Each writes
-to its own quickstart partition (`quickstart-mem0`, `quickstart-zep`, …), never
-to the `waku` partition your real assistant uses.
+to its own quickstart partition (`quickstart-mem0`, `quickstart-zep`), never to
+the `waku` partition your real assistant uses.
 
 | file | needs | writes to |
 |---|---|---|
-| `langmem_native.py` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | RAM. Nothing survives the process. |
 | `mem0_native.py` | `MEM0_API_KEY` | your mem0 account, user `quickstart-mem0` |
 | `zep_native.py` | `ZEP_API_KEY` | your Zep project, user `quickstart-zep` |
-| `supabase_native.py` | `SUPABASE_URL`, `SUPABASE_KEY`, `OPENAI_API_KEY` | a table you create (SQL in the file header) |
 
 ## What each one is actually for
 
@@ -81,19 +78,14 @@ to the `waku` partition your real assistant uses.
   contradict yourself the old edge is marked invalid *at a point in time*
   rather than out-ranked. Ingestion is async; the script waits, and explains
   why skipping that wait makes Zep look like it forgot.
-- **LangMem** — a library, not a service. No dashboard, no account, and by
-  default no persistence: the store is a dict in your process. Its extractor
-  reads the **whole conversation at once**, so it resolves the May→June
-  contradiction *before* anything is stored — 3 sentences in, 2 memories out.
-- **Supabase pgvector** — the roll-your-own baseline. ~30 lines, real
-  embeddings, genuinely good at the paraphrase and the Chinese question. And
-  nothing in it ever decides a fact stopped being true, so both launch dates
-  sit there as neighbours forever. That gap is the argument for the other three.
+
+Both decide for themselves what to keep — that is what separates them from
+waku's own store, which keeps what you said.
 
 ## What we found (2026-08-12)
 
-Same three sentences, same three questions, three different stores. None of
-this is from the docs.
+Same three sentences, same three questions, two different stores. None of this
+is from the docs.
 
 **mem0** kept the contradiction as two separate rows and never resolved it:
 
@@ -109,13 +101,6 @@ superseded May**:
 ```
 exact      : When is the product launch?   -> ...scheduled for June 2026
 chinese    : 发布会是什么时候?              -> ...scheduled for May 2026
-```
-
-**LangMem** resolved the contradiction before storing anything — three
-sentences in, two memories out:
-
-```
-kept : User's product launch is scheduled for June (updated from May - date was moved).
 ```
 
 **Zep** did the thing it is built for, and marked the old fact invalid at a
@@ -202,13 +187,13 @@ enough that a silently rotted example is worse than no example.
 
 ## Video angle
 
-- **Hook:** four memory products run the same five beats, and they disagree about what
+- **Hook:** two memory products run the same five beats, and they disagree about what
   "remembered" means.
 - **The surprise:** "ingested" and "queryable" are different events (see What we found).
 - **Board:** [docs/whiteboards/memory-in-harness.excalidraw](../../docs/whiteboards/memory-in-harness.excalidraw).
 
 ## Graduation
 
-Already graduated: `waku/memory/semantic/` has mem0, Zep and LangMem stores behind the
+Already graduated: `waku/memory/semantic/` has mem0 and Zep stores behind the
 same interface as the default store, and the dashboard's Memory race compares them. This
 folder stays as the on-their-own-terms baseline.
