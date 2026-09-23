@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -249,6 +250,23 @@ def _belongs_elsewhere(model: str, provider_name: str) -> bool:
     return bool(owner) and owner != provider_name
 
 
+# OpenCode 的网关（zen / go）要求一个会话头，否则对话接口直接 400
+# MissingSessionID —— 它靠这个把请求路由到固定后端，"cannot be routed
+# efficiently"。值只要非空就行（实测 UUID、随意字符串均可），所以每个进程
+# 生成一个：同一进程的请求路由一致，重启换一个新的也合法。
+#
+# 注意不是每个 openai 兼容的网关都吃这个头，所以只在 opencode_* 上加 ——
+# 给 DeepSeek 或 OpenAI 发一个它们不认识的 x-* 头是没必要的噪音。
+OPENCODE_SESSION = str(uuid.uuid4())
+
+
+def gateway_headers(provider_name: str) -> dict[str, str]:
+    """调用该 provider 时需要附带的额外请求头（没有就返回空字典）。"""
+    if provider_name.startswith("opencode_"):
+        return {"x-opencode-session": OPENCODE_SESSION}
+    return {}
+
+
 def get_client(settings: Settings):
     """Build the client for settings.provider and fill in default model ids.
     Returns anything with .messages.create(...) in the Anthropic shape."""
@@ -296,14 +314,24 @@ def get_client(settings: Settings):
     # a hung network call must never freeze a turn silently
     timeout = float(os.getenv("WAKU_LLM_TIMEOUT", "120"))
 
+    # 只在网关真的要求时才传：不带头的 provider 走原来的调用形状，
+    # 多传一个空 dict 只会让调用方（包括测试里的 stub）多一个要维护的参数。
+    headers = gateway_headers(settings.provider)
+
     if provider.kind == "anthropic":
         import anthropic
 
         kwargs: dict = {"api_key": api_key, "timeout": timeout}
         if base_url:
             kwargs["base_url"] = base_url
+        if headers:
+            kwargs["default_headers"] = headers
         return anthropic.Anthropic(**kwargs)
-    return OpenAICompatClient(api_key=api_key, base_url=base_url, timeout=timeout)
+
+    kwargs = {"api_key": api_key, "base_url": base_url, "timeout": timeout}
+    if headers:
+        kwargs["default_headers"] = headers
+    return OpenAICompatClient(**kwargs)
 
 
 class OpenAICompatClient:
@@ -312,10 +340,12 @@ class OpenAICompatClient:
     between the two wire formats — worth reading once.
     """
 
-    def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 120.0):
+    def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 120.0,
+                 default_headers: dict[str, str] | None = None):
         import openai
 
-        self._client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+        self._client = openai.OpenAI(api_key=api_key, base_url=base_url, timeout=timeout,
+                                     default_headers=default_headers or {})
         self.messages = SimpleNamespace(create=self._create, stream=self._stream)
 
     def _to_openai(self, *, model, messages, max_tokens, system=None, tools=None) -> dict:

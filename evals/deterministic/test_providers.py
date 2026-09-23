@@ -286,6 +286,46 @@ def test_the_shared_family_guard_still_drops_a_real_foreign_model(monkeypatch):
     assert settings.model == "kimi-k3", "deepseek 的模型漏到了 kimi"
 
 
+def test_the_opencode_gateway_gets_its_session_header(monkeypatch):
+    """OpenCode 的网关（zen / go）要求 x-opencode-session，否则对话接口直接
+    400 MissingSessionID —— 实测如此，打开浏览器 UA 不行，换成 SDK 自带的 UA
+    也不行，只有补上这个头才通。
+
+    它靠这个头把请求路由到固定后端，值只要非空即可（UUID、随意字符串均可）；
+    每个进程生成一个，保证同进程的请求落在一处。
+    """
+    from waku.loop.models import OPENCODE_SESSION, gateway_headers
+
+    for name in ("opencode_go", "opencode_zen"):
+        assert gateway_headers(name) == {"x-opencode-session": OPENCODE_SESSION}
+    assert OPENCODE_SESSION.strip(), "空的会话头会被网关拒掉"
+
+
+def test_no_other_provider_gets_that_header(monkeypatch):
+    """x-* 头不能乱发：给 DeepSeek 或 OpenAI 发一个它们不认识的私有头是
+    没必要的噪音，而且这种"顺手都给上"的习惯正是跨供应商泄漏的来源。"""
+    from waku.loop.models import gateway_headers
+
+    for name in ("deepseek", "openai", "anthropic", "kimi", "xai"):
+        assert gateway_headers(name) == {}
+
+
+def test_the_session_header_reaches_the_real_client(monkeypatch):
+    """头不能只活在一个辅助函数里 —— 它必须真的到得了底层客户端，
+    否则就是在测一个没人调用的函数。"""
+    from waku.config import Settings
+    from waku.loop.models import get_client
+
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    opencode = get_client(Settings(provider="opencode_go"))
+    assert opencode._client.default_headers.get("x-opencode-session")
+
+    plain = get_client(Settings(provider="deepseek"))
+    assert not plain._client.default_headers.get("x-opencode-session")
+
+
 def test_a_foreign_gate_model_is_dropped_even_when_the_env_names_the_provider(monkeypatch):
     """The case that was actually live in Sean's .env: WAKU_PROVIDER=xai with
     WAKU_SMALL_MODEL still holding anthropic's gate model. Scoping by "did the
