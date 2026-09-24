@@ -66,6 +66,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from waku.config import load_settings
+from waku.runtime import conversation
 from waku.runtime.host import Host, HostBusy, HostStopped
 
 BASE_URL = "https://ilinkai.weixin.qq.com"
@@ -733,7 +734,9 @@ class WeChatGateway:
                 reply = NON_TEXT_REPLY if kind != "empty" else EMPTY_TEXT_REPLY
                 self._decide(message_id, "handled", f"{kind} message, answered without a turn")
             else:
-                session_id = f"{self.name}-{user_id}"   # 稳定的微信会话 id
+                # 和浏览器**同一条线**：一个助手、多个门。你在微信说的，回到
+                # 浏览器问"我说过什么"就能读到。来源仍然逐行记进 chat_log.source。
+                session_id = conversation.session_id_for_turn()
                 result = host.ask(text, source=self.name, session_id=session_id)
                 # 只有整轮结束后的最终回复才发出去。中间任何流式片段都不发。
                 reply = result.reply or ""

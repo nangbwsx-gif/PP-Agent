@@ -14,8 +14,8 @@ agent's session.
 from __future__ import annotations
 
 from evals.helpers import ScriptedClient, make_waku
-from waku.ops import browser_agent
-from waku.ops.browser_agent import rotate_if_idle
+from waku.runtime import conversation
+from waku.runtime.conversation import rotate_if_idle
 
 
 def _seed(app, session_id, age_minutes):
@@ -34,7 +34,7 @@ def test_idle_session_rotates(tmp_path, monkeypatch):
     _seed(app, before, age_minutes=120)          # 2h idle > 60m threshold
     rotated = rotate_if_idle(app.conn, before)
     assert rotated != before
-    assert rotated.startswith("dashboard-")
+    assert rotated.startswith("chat-")
 
 
 def test_active_session_stays(tmp_path, monkeypatch):
@@ -66,21 +66,21 @@ def test_the_rotated_thread_becomes_the_current_one(tmp_path, monkeypatch):
     monkeypatch.setenv("WAKU_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("WAKU_SESSION_IDLE_MINUTES", "60")
     app = make_waku(tmp_path / "home", client=ScriptedClient([]))
-    _seed(app, "dashboard-20260101-120000", age_minutes=120)
+    _seed(app, "chat-20260101-120000", age_minutes=120)
 
-    monkeypatch.setattr(browser_agent, "_dashboard_session", "dashboard-20260101-120000")
-    rotated = browser_agent.current_session()
+    monkeypatch.setattr(conversation, "_thread_id", "chat-20260101-120000")
+    rotated = conversation.session_id_for_turn()
 
-    assert rotated != "dashboard-20260101-120000"
-    assert browser_agent.dash_session() == rotated
+    assert rotated != "chat-20260101-120000"
+    assert conversation.thread_id() == rotated
 
 
 def test_set_current_session_moves_the_pointer(monkeypatch):
     """「New chat」 and 「switch」 move this pointer. Neither touches an agent,
     because the host binds the session on every request."""
-    monkeypatch.setattr(browser_agent, "_dashboard_session", "dashboard-a")
-    browser_agent.set_current_session("s-20260101-120000")
-    assert browser_agent.dash_session() == "s-20260101-120000"
+    monkeypatch.setattr(conversation, "_thread_id", "chat-a")
+    conversation.set_thread_id("s-20260101-120000")
+    assert conversation.thread_id() == "s-20260101-120000"
 
 
 def test_provider_switch_resets_stale_model_overrides(tmp_path, monkeypatch):

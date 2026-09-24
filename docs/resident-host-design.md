@@ -86,25 +86,18 @@ This is the one place the proposal asks for more machinery than the current code
 has. If the maintainer prefers the smaller version, a lock is a drop-in: the
 queue is internal to the host and no gateway can tell the difference.
 
-## 4. Why sessions cannot cross
+## 4. Which session a turn belongs to
 
-This is the failure the design has to prevent, and it is not hypothetical.
-
-`Session` holds `self.history`, an **in-memory list**, and says so in its own
-docstring: one session per gateway. `Waku.respond()` builds the prompt from it:
+`Session` holds `self.history`, an **in-memory list**. `Waku.respond()` builds the
+prompt from it:
 
 ```python
 window = self.settings.history_turns * 2
 messages = self.session.history[-window:] + [{"role": "user", "content": user_message}]
 ```
 
-`Waku` holds exactly one `Session`. So two gateways sharing one Waku would share
-one working window: a WeChat message would be answered with the browser's last
-few turns in the prompt. The database rows would still be tagged correctly,
-which makes it worse — the stored transcript would look right while the model
-saw someone else's conversation.
-
-The fix is that every request names its own session, and the host switches to it
+`Waku` holds exactly one `Session`, so whatever is in that list is what the model
+sees beyond its system prompt. The host therefore binds a session per request,
 inside the serial boundary:
 
 ```python
@@ -115,39 +108,54 @@ def ask(self, text, *, source, session_id, observer=None, stream=False):
 ```
 
 `session_id` is a required argument rather than something the host derives from
-`source`, for two reasons. A source can legitimately own more than one thread —
-the dashboard already does, since "+ New chat" mints a new id while the source
-stays `dashboard`, and `resume_or_new_session` exists to choose between them.
-And deriving it would put thread policy inside the host, which would then have
-to guess what each gateway means by "its" conversation. A gateway that knows
-which thread a message belongs to says so; a gateway that does not yet have an
-answer is a decision for that gateway.
+`source`. The host must not guess what a gateway means by "its" conversation —
+and the two gateways do not even agree on the answer any more (below).
+`source` travels separately because it is not a routing key: it is the origin tag
+written to `chat_log.source` and shown in History.
 
-`source` still travels separately, because it is not a routing key. It is the
-origin tag written to `chat_log.source` and shown in the inbox.
+`Session.switch()` is the existing primitive that does the work: it sets
+`session_id` and reloads the last `history_turns` from the database. One call,
+inside the lock, and `waku/app.py` does not change at all.
 
-`Session.switch()` already exists and already does the right thing: it sets
-`session_id` and reloads the last `history_turns` from the database. So the
-binding is one existing call, made inside the lock, and `waku/app.py` does not
-change at all.
+It also removed the hand-carried session id: a rebuild no longer copies
+`session.session_id` from the old instance to the new one, because the next
+`ask()` reloads the window from `state.db` on its own.
 
-It also means a rebuild does not have to hand-carry the conversation. Today
-`browser_agent.rebuild()` copies `session.session_id` from the old instance to
-the new one by hand, because a fresh Waku starts on `default`. With `switch()`
-called on every turn, the next `ask()` after a rebuild reloads the window from
-`state.db` on its own. The hand-off disappears.
+### One line, not one per channel
 
-| Source | Session id | Produced by |
+This section used to require the opposite: one session per source, so a WeChat
+message could never be answered with the browser's turns in the prompt. That
+ruled out exactly what the first real user then asked for — "I asked the browser
+what I had said on WeChat and it had no idea" — and the reason is worth keeping:
+
+- The isolation defended a **multi-user** scenario: a stranger's message being
+  answered with someone else's context. The WeChat gateway is allow-listed and
+  bound to one account, so there is no second user to protect against.
+- For one person behind several doors, continuity is the feature. "One assistant,
+many doors" is not true if each door has amnesia.
+
+So both gateways now ask on the same thread, from
+`waku/runtime/conversation.py`:
+
+| Gateway | Session id | Produced by |
 |---|---|---|
-| dashboard | `dashboard-YYYYmmdd-HHMMSS` | `resume_or_new_session` (unchanged) |
-| wechat | `wechat-<bot_id>` | the WeChat gateway, per bound bot |
-| cli | `terminal` | unchanged |
-| voice | `voice` | unchanged |
+| dashboard | `chat-YYYYmmdd-HHMMSS` | `session_id_for_turn()` |
+| wechat | the same id | the same call |
+| cli | `terminal` | unchanged — `waku` in a terminal is still its own process |
+| voice | `voice` | unchanged, for the same reason |
 
-`chat_log.source` already records the origin per row, and the dashboard's
-"unified inbox" already reads it. Session ids stay readable and keep their
-existing prefixes; the source column stays the reliable signal, exactly as
-`resume_or_new_session` argues today.
+What did **not** change: `chat_log.source` still records the origin per row, so
+History shows which door each message came through. Sharing a line is not the
+same as losing the source.
+
+The cost, stated: text arriving from either door can steer the next turn. With
+the allow-list in front of the WeChat gateway and one operator behind both, that
+is the accepted trade. It is worth revisiting if this ever serves two people.
+
+(`waku/runtime/conversation.py` was `waku/ops/browser_agent.py`. It is neither in
+`ops/` nor about the browser now, and threads are named `chat-*` rather than
+`dashboard-*` because they carry both channels. Existing `dashboard-*` threads
+still resume — recency is the only key, and nothing needed migrating.)
 
 ## 5. Settings changes: one rebuild, every gateway
 
@@ -276,7 +284,7 @@ implementation.
 
 ## 9. What this does to the existing files
 
-**`waku/ops/browser_agent.py` — its job moves out.** `_agent`, `agent_lock`,
+**`waku/runtime/conversation.py` — its job moves out.** `_agent`, `agent_lock`,
 `get_agent`, `current` and `rebuild` all become the host's. The module keeps
 what is genuinely dashboard policy: `resume_or_new_session`,
 `maybe_rotate_session`, and the reasoning behind them, exposed as the dashboard

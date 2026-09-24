@@ -63,6 +63,10 @@ What it does and does not do:
 
 - Text only. An image, voice note, file or video gets a one-line reply saying so
   **without** running an agent turn.
+- **One conversation, both doors.** The browser and WeChat ask on the same thread
+  (`waku/runtime/conversation.py`), so what you say in one is in the other's
+  working window — and History shows which door each message came through,
+  because `chat_log.source` still records it per row.
 - One account, direct messages. The bot cannot be added to an ordinary group.
 - It cannot message you first: a reply needs the `context_token` from a recent
   inbound message, and the protocol has no "open a conversation" call.

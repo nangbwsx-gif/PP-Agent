@@ -26,6 +26,7 @@ import pytest
 from evals.helpers import FakeAgent
 from waku.config import Settings
 from waku.gateway import wechat
+from waku.runtime import conversation
 from waku.runtime.host import Host
 
 USER = "o9cq800kum_4g8Py8Qw5G0a@im.wechat"
@@ -110,6 +111,23 @@ class FakeILink:
     # -- helpers for assertions
     def sent_texts(self):
         return [item["item_list"][0]["text_item"]["text"] for item in self.sent]
+
+
+
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """Point WAKU_HOME somewhere disposable, for every test in this file.
+
+    The shared thread id comes from `load_settings().home`, so without this the
+    gateway resolves it against the developer's REAL conversation — which is
+    exactly what happened the first time this ran: the assertion compared against
+    a live `dashboard-*` thread from someone's actual chat log. A test must never
+    read, and never depend on, the real runtime directory.
+    """
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("WAKU_HOME", str(home))
+    monkeypatch.setattr(conversation, "_thread_id", None)
 
 
 def make_gateway(tmp_path, api, host=None):
@@ -208,7 +226,14 @@ def test_a_redelivered_message_does_not_run_a_second_turn(tmp_path):
 # ------------------------------------------------------------------ session
 
 
-def test_it_asks_with_the_wechat_source_and_a_stable_session_id(tmp_path):
+def test_it_asks_on_the_shared_thread_with_the_wechat_source(tmp_path):
+    """Both gateways ask on the SAME thread, and only `source` tells them apart.
+
+    That is the whole point of sharing one line: a conversation held over WeChat
+    is the conversation the browser resumes, so "what did I say on WeChat" has an
+    answer. The channel is still recorded per row, which is what lets History
+    show where each message came in.
+    """
     api = FakeILink([batch(user_text("m1", "first", user_id=USER),
                            user_text("m2", "second", user_id=USER))])
     agent = FakeAgent()
@@ -219,10 +244,12 @@ def test_it_asks_with_the_wechat_source_and_a_stable_session_id(tmp_path):
         _wait_for(lambda: len(api.sent) == 2)
         gateway.stop()
 
-    assert [sid for sid, _t, _s in agent.responded] == [f"wechat-{USER}"] * 2
+    threads = [sid for sid, _t, _s in agent.responded]
+    assert len(set(threads)) == 1, f"two channels on two threads: {threads}"
+    assert threads[0].startswith("chat-"), threads[0]
     assert [src for _sid, _t, src in agent.responded] == ["wechat", "wechat"]
-    # And the session the host bound is the one the gateway asked for.
-    assert agent.session.switched == [f"wechat-{USER}"] * 2
+    # And the thread the host bound is exactly the one the gateway asked for.
+    assert agent.session.switched == threads
 
 
 # ------------------------------------------------------- final reply only

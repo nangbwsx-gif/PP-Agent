@@ -9,7 +9,7 @@ the code behind it.
 
 The handler list below is checked with getattr(dashboard, ...), so it also pins
 the re-exports. After the split, most handlers LIVE in arena / catalog /
-settings_api / browser_agent and are imported here. If one stops being reachable
+settings_api / runtime.conversation and are imported here. If one stops being reachable
 from `dashboard`, the router breaks and this fails.
 
 If you add a route or a payload key on purpose, update the list below in the

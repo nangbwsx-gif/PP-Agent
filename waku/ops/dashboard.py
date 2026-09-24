@@ -42,7 +42,7 @@ from waku.integrations import (
     list_providers,
     test_integration,
 )
-from waku.ops import browser_agent, commands, compare_history
+from waku.ops import commands, compare_history
 from waku.ops.arena import (
     compare_clear,
     compare_delete_run,
@@ -54,6 +54,7 @@ from waku.ops.catalog import list_models
 from waku.ops.pricing import price_for, usage_summary
 from waku.ops.settings_api import apply_settings, pin_action, settings_info
 from waku.ops.tracing import TraceEncodingError, iter_trace_lines
+from waku.runtime import conversation
 from waku.runtime import host as host_module
 
 PORT = 7777
@@ -112,7 +113,7 @@ def chat_stream(message: str, emit) -> None:
     # 绑定并执行。这里既没有锁也没有 agent —— 排队和顺序是 Host 的事。
     live = host_module.shared_host().current()
     settings_used = live.settings if live is not None else load_settings()
-    session_id = browser_agent.current_session()
+    session_id = conversation.session_id_for_turn()
     start = datetime.now(UTC)
     result = host_module.shared_host().ask(message, source="dashboard", session_id=session_id,
                         observer=observer, stream=True)
@@ -496,7 +497,7 @@ def collect() -> dict:
         "sessions": session_list(conn),
         # 当前会话是 dashboard 自己的指针，不再是 agent 上的字段 —— agent 的
         # session 现在每轮都会被 switch 到请求指定的那条线上。
-        "current_session": browser_agent.dash_session(),
+        "current_session": conversation.thread_id(),
         "consolidate_every": settings.consolidate_every,
         "calendar": rows('SELECT title, start, "end", attendees, created_at FROM calendar_events ORDER BY start'),
         "outbox": outbox,
@@ -756,11 +757,11 @@ def session_action(payload: dict) -> dict:
     # 也不用建 agent —— Host 每轮会 switch 到请求带的 session_id 上。
     if action == "new":
         sid = datetime.now().strftime("s-%Y%m%d-%H%M%S")
-        browser_agent.set_current_session(sid)
+        conversation.set_thread_id(sid)
         return {"ok": True, "session_id": sid, "history": []}
     if action == "switch":
         sid = payload.get("id") or "default"
-        browser_agent.set_current_session(sid)
+        conversation.set_thread_id(sid)
         # 和只读的 "history" 分支同一批行（带 meta），所以切过去的会话能渲染完整
         # 的回合卡片（gate/耗时/工具/模型），而不只是文字。
         settings = load_settings()

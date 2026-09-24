@@ -19,7 +19,7 @@ forces the graph for ONE message and changes nothing else.
 
 from __future__ import annotations
 
-from waku.ops import browser_agent
+from waku.runtime import conversation
 from waku.runtime.host import shared_host
 
 USAGE = (
@@ -59,7 +59,7 @@ def run_triage(observer=None, message: str = "") -> dict:
     # path that could drift from it.
     result = shared_host().run(
         lambda agent: agent._respond_via_graph(text, notify, stream=False),
-        session_id=browser_agent.current_session(),
+        session_id=conversation.session_id_for_turn(),
     )
 
     if result is None:

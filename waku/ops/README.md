@@ -14,7 +14,6 @@ frontend.
 | File | Owns |
 |---|---|
 | `dashboard.py` | The stdlib HTTP server: routes, SSE, `collect()`. Serves everything below. |
-| `browser_agent.py` | The ONE shared `Waku` behind the browser gateway + its dated chat session. |
 | `arena.py` | Racing N models through the same harness, in isolated temp homes. |
 | `catalog.py` | What models a provider can serve + your pinned `provider:model` shortlist. |
 | `pricing.py` | `$/M` rate tables, knowledge cutoffs, and the spend ledger summary. |
@@ -35,9 +34,14 @@ frontend.
 dashboard  ──→  arena  ──→  pricing        scoring · judge · compare_history
     │                        ↑
     ├───────→  settings_api ─┼─→  catalog  ──→  pricing
-    │                        │
-    └───────→  browser_agent ┘        (settings_api also rebuilds the agent)
+    │
+    └──→ runtime.host (the one Waku) ←── every gateway
+         runtime.conversation (the one chat line)
 ```
+
+The dashboard no longer holds an agent of its own: it asks `waku/runtime/host.py`,
+and so does the WeChat gateway. `runtime/` is above `ops/` — the arrows still only
+point one way.
 
 One rule keeps this readable: **arrows never point back up.** `catalog` doesn't
 know settings_api exists; `pricing` doesn't know anything exists. If you find
@@ -51,16 +55,21 @@ directly.
 
 ## The one global
 
-`browser_agent` holds a module-level agent shared by every browser tab, because
-the dashboard is multi-threaded and long-lived in a way the CLI is not. Two
-callers mutate it (`dashboard` builds it on the first chat, `settings_api`
-rebuilds it on a provider switch), so **import the module, not the name**:
+It is not here any more. The process's one `Waku` lives in
+[`waku/runtime/host.py`](../runtime/host.py), shared by every gateway, because the
+dashboard is no longer the only thing that needs it. The same rule applies —
+**import the module, not the name**, and let the module that owns the global be the
+only one that rebinds it:
 
 ```python
-from waku.ops import browser_agent
-browser_agent.current()          # sees a later swap
+from waku.runtime import host as host_module
+host_module.shared_host().current()     # sees a later rebuild
 ```
 
 ```python
-from waku.ops.browser_agent import _agent   # frozen at None forever
+from waku.runtime.host import _HOST     # frozen at None forever
 ```
+
+The dated chat line those turns land on is `waku/runtime/conversation.py`, and it
+is shared too — see
+[resident-host-design.md §4](../../docs/resident-host-design.md).
