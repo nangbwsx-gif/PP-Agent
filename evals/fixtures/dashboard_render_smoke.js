@@ -154,6 +154,26 @@ if (!/class="connstatus connected"/.test(connHtml)) {
   failed++;
 }
 
+// The WeChat card's detail line: counts the running gateway reports. uiButton is
+// stubbed here, so the card's two extra actions render as nothing and cannot be
+// asserted; this can, and it is the part fed by live data.
+//
+// Both languages on purpose: this harness sets WAKU_LANG=zh (the Chinese overlay
+// is why it exists), so the rendered text is Chinese — but asserting only on the
+// Chinese would turn a future language switch into a failing test for no reason.
+const WECHAT_DETAILS = [
+  ["reply\(ies\) not delivered yet", "条回复尚未送达"],
+  ["interrupted message", "条消息被中断"],
+  ["refused sender", "个发送者被拒绝"],
+];
+for (const [english, chinese] of WECHAT_DETAILS) {
+  if (!new RegExp(english).test(connHtml) && !connHtml.includes(chinese)) {
+    console.log(`\nFAIL  the WeChat card lost its "${english}" detail`
+              + " — wechatCardDetail() returned nothing for data that has it");
+    failed++;
+  }
+}
+
 if (failed) {
   console.log(`\n${failed} view(s) failed`);
   process.exit(1);

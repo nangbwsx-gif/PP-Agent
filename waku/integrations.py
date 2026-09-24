@@ -135,8 +135,16 @@ def _notion_normalize(values: dict[str, str]) -> dict[str, str]:
     return values
 
 
-INTEGRATIONS: tuple[Integration, ...] = (
-    Integration("google_calendar", "Calendar & Productivity", "Google Calendar",
+def _wechat_enabled(env: Mapping[str, str]) -> bool:
+    """和 `Settings.wechat` 解析同一组值。
+
+    不能写成 `bool(env.get(...))` —— 那会把 `WAKU_WECHAT=0` 读成已启用，而卡片上的
+    复选框写的正是 "0"。
+    """
+    return env.get("WAKU_WECHAT", "").strip().lower() in ("1", "true", "yes")
+
+
+INTEGRATIONS: tuple[Integration, ...] = (    Integration("google_calendar", "Calendar & Productivity", "Google Calendar",
                 "Lets Waku create and update Google Calendar events.",
                 (EnvField("WAKU_GOOGLE_CALENDAR", "Enable Google Calendar", FieldKind.BOOL),
                  EnvField("WAKU_GOOGLE_CALENDAR_ID", "Calendar ID", default="primary")),
@@ -175,6 +183,20 @@ INTEGRATIONS: tuple[Integration, ...] = (
                                "raise it if seeding times out, never lower it to make a benchmark finish.")),
                 "arena", "zep_cloud", "", ReloadMode.AGENT,
                 lambda env: env.get("WAKU_SEMANTIC_STORE") == "zep", None),
+    # The one member of the Channels group. ReloadMode.GATEWAY because turning it
+    # on must restart *this gateway* and nothing else — a provider switch rebuilds
+    # the Waku instance, and a channel has no business interrupting a turn.
+    # The bot token is not here and never will be: it lives in .waku/wechat/, so
+    # nothing the dashboard sends or renders can leak it.
+    Integration("wechat", "Channels", "WeChat",
+                "One-to-one text with one bound WeChat account, over WeChat's iLink bot protocol.",
+                (EnvField("WAKU_WECHAT", "Enable WeChat", FieldKind.BOOL,
+                          help="Starts the gateway inside `waku serve`. Off until this is on."),
+                 EnvField("WAKU_WECHAT_ALLOW", "Allowed senders", required=True,
+                          help="Comma-separated WeChat user ids allowed to talk to it. Empty "
+                               "means nobody — the check runs before anything can reach the "
+                               "agent. Press Scan below and it tells you which id to add.")),
+                "wechat", None, "", ReloadMode.GATEWAY, _wechat_enabled, None),
     Integration("tavily", "Search & Observability", "Tavily", "Lets Waku search the web.",
                 (EnvField("TAVILY_API_KEY", "API key", secret=True),), None, None,
                 "https://tavily.com", ReloadMode.LIVE, lambda env: bool(env.get("TAVILY_API_KEY")), None),

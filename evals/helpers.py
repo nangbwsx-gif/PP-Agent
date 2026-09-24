@@ -98,13 +98,16 @@ def stub_host(monkeypatch, *, agent=None, rebuild_error=None):
     seam moved with it and this keeps the patch shape in one place.
 
     `rebuilds` fills as rebuild() is called, which is what a test asserting
-    "this save must not rebuild" needs to read.
+    "this save must not rebuild" needs to read. The gateway methods are here for
+    the same reason: a ReloadMode.GATEWAY save must restart one gateway and
+    nothing else, and that is only provable by watching both.
     """
     from waku.runtime import host as host_module
 
     if agent is None:
         agent = SimpleNamespace(tracer=SimpleNamespace(event=lambda *a, **k: None))
     rebuilds: list = []
+    gateways: dict = {}
 
     class _StubHost:
         def current(self):
@@ -114,9 +117,16 @@ def stub_host(monkeypatch, *, agent=None, rebuild_error=None):
             rebuilds.append(True)
             return rebuild_error
 
+        def set_gateway(self, gateway):
+            gateways[gateway.name] = gateway
+
+        def remove_gateway(self, name):
+            gateways.pop(name, None)
+
     stub = _StubHost()
     monkeypatch.setattr(host_module, "live_host", lambda: stub)
     monkeypatch.setattr(host_module, "shared_host", lambda: stub)
+    stub.gateways = gateways
     return stub, rebuilds
 
 

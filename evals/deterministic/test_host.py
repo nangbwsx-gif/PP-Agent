@@ -492,3 +492,38 @@ def test_start_after_stop_does_not_add_a_second_worker():
 
     with pytest.raises(HostStopped):
         host.ask("hi", source="s", session_id="1")
+
+
+def test_set_gateway_starts_it_and_replaces_the_previous_one():
+    """`set_gateway` is how a settings change restarts ONE gateway. The WeChat
+    connection page depends on: the new one starts, the old one stops, and the
+    list does not end up holding both."""
+    class _Gateway:
+        name = "wechat"
+
+        def __init__(self):
+            self.started = 0
+            self.stopped = 0
+
+        def start(self, host):
+            self.started += 1
+
+        def stop(self):
+            self.stopped += 1
+
+    first, second = _Gateway(), _Gateway()
+    host = Host(build=lambda: FakeAgent())
+    host.start()
+    try:
+        host.set_gateway(first)
+        assert first.started == 1
+        host.set_gateway(second)
+        assert second.started == 1
+        assert first.stopped == 1, "the replaced gateway was never stopped"
+        assert host.gateway_names() == ("wechat",), "both copies are still attached"
+
+        host.remove_gateway("wechat")
+        assert second.stopped == 1
+        assert host.gateway_names() == ()
+    finally:
+        host.stop()

@@ -67,6 +67,13 @@ STATIC = Path(__file__).resolve().parent / "static"
 # 它的第一个 gateway：它不自己持有 agent，也不再自己拿锁 —— 排队、顺序、
 # "忙"/"关停"的答复都在 Host 里。
 
+# 本进程装着的微信 gateway，以及正在进行的扫码。
+#
+# 扫码状态放在服务端而不是交给浏览器：qrcode token 因此不必出门，而且一次登录只
+# 可能有一个在飞。凭据落地在 .waku/wechat/，**没有任何一步把它送进 HTTP 响应**。
+_wechat = None
+_pending_login: dict | None = None
+
 
 def chat(message: str) -> dict:
     """One turn, one JSON result — the non-streaming door to the same room.
@@ -498,6 +505,9 @@ def collect() -> dict:
         # 当前会话是 dashboard 自己的指针，不再是 agent 上的字段 —— agent 的
         # session 现在每轮都会被 switch 到请求指定的那条线上。
         "current_session": conversation.thread_id(),
+        # 微信卡片要显示的东西：跑着的 gateway 的实时状态，以及它报出来的
+        # 错误和待发回复。**只有能展示的字段** —— token / context_token 从不进来。
+        "wechat": _wechat_payload(),
         "consolidate_every": settings.consolidate_every,
         "calendar": rows('SELECT title, start, "end", attendees, created_at FROM calendar_events ORDER BY start'),
         "outbox": outbox,
@@ -969,6 +979,10 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _is_local(self) -> bool:
+        """这条请求来自本机。二维码和登录状态只该给本机 dashboard。"""
+        return self.client_address[0] in ("127.0.0.1", "::1")
+
     def _send(self, body: bytes, ctype: str, *, no_cache: bool = False) -> None:
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -1077,6 +1091,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
+        # The WeChat login endpoints are for the local dashboard only. The server
+        # already binds 127.0.0.1, so this only restates intent in a way a test can
+        # hold onto — a QR session and a login state should never be reachable from
+        # another host even if somebody puts a proxy in front of the port.
+        if self.path.startswith("/api/wechat/") and not self._is_local():
+            self._send(json.dumps({"error": "the WeChat endpoints are local-only"}).encode(),
+                       "application/json")
+            return
         # /api/voice takes a raw audio blob, not JSON — handle it first.
         if self.path == "/api/voice":
             raw = self.rfile.read(length)
@@ -1204,7 +1226,10 @@ class Handler(BaseHTTPRequestHandler):
                   "/api/connections": None, "/api/connections/test": None,
                   "/api/providers": None,
                   "/api/compare/clear": compare_clear,
-                  "/api/compare/regrade": compare_regrade, "/api/compare/delete_run": compare_delete_run}
+                  "/api/compare/regrade": compare_regrade, "/api/compare/delete_run": compare_delete_run,
+                  "/api/wechat/login": wechat_login,
+                  "/api/wechat/login/status": wechat_login_status,
+                  "/api/wechat/logout": wechat_logout}
         if self.path not in routes:
             self.send_response(404)
             self.end_headers()
@@ -1258,27 +1283,180 @@ def main() -> None:
 
 
 def start_configured_gateways() -> None:
-    """把启用了的 gateway 挂到本进程的 Host 上。没启用就什么都不做。
+    """把启用了的 gateway 挂到本进程的 Host 上，并把微信的状态和重载钩子交给
+    `integrations`。没启用就什么都不做。
 
     **这里绝不允许往上抛。** 一个渠道配错了不该把 dashboard 一起带走：
     `waku serve --zh` 里网页永远能起来，微信连不上只是微信那部分不行。
-    `Host.register` 自己就兜住了 `start()` 的异常并记下原因，所以这里再兜一层
+    `Host.set_gateway` 自己就兜住了 `start()` 的异常并记下原因，所以这里再兜一层
     只是为了防导入和构造阶段（比如 extra 没装、状态目录建不了）。
     """
     try:
-        settings = load_settings()
-        if not settings.wechat:
-            return
+        from waku.integrations import register_gateway_reloader, register_gateway_status_provider
+
+        # integrations 留的两个钩子：没在跑的 gateway 由 provider 回答状态，设置变更
+        # 由 reloader 收拾。注册在这里，因为只有这个进程跑着 gateway。
+        register_gateway_status_provider(wechat_status_provider)
+        register_gateway_reloader(wechat_reloader)
+    except Exception as exc:
+        print(f"WeChat status hooks did not register: {type(exc).__name__}: {exc}")
+
+    if apply_wechat_gateway() is not None:
         from waku.gateway import wechat
 
-        gateway = wechat.from_environment()
-        if gateway is None:
-            return
-        host_module.shared_host().register(gateway)
         print(f"WeChat gateway started (state: {wechat.state_directory()})")
+
+
+def apply_wechat_gateway():
+    """按当前环境装上 / 替换 / 摘掉微信 gateway，返回装上的那个（或 None）。
+
+    **只碰这一个 gateway。** Host 持有的 Waku 实例动都不动，所以正在跑的一轮对话
+    不会因为改了一个渠道的开关而被重建打断 —— 这正是 ReloadMode.GATEWAY 与
+    ReloadMode.AGENT 的区别。
+    """
+    global _wechat
+    try:
+        from waku.gateway import wechat
+
+        host = host_module.shared_host()
+        gateway = wechat.from_environment()          # None = WAKU_WECHAT 未开
+        if gateway is None:
+            host.remove_gateway(wechat.WeChatGateway.name)
+            _wechat = None
+            return None
+        host.set_gateway(gateway)
+        _wechat = gateway
+        return gateway
     except Exception as exc:
         print(f"WeChat gateway did not start: {type(exc).__name__}: {exc}")
         print("the dashboard is unaffected — run `waku wechat status` for details")
+        _wechat = None
+        return None
+
+
+def wechat_phase_status(status: dict):
+    """把 gateway 自己的 phase 翻译成连接页的状态。"""
+    from waku.integrations import IntegrationState, IntegrationStatus
+
+    phase = status.get("phase", "stopped")
+    if phase == "expired":
+        return IntegrationStatus(IntegrationState.ERROR,
+                                 status.get("last_error") or "session expired — scan again")
+    # 错误先判：轮询线程活着、但上一次请求失败 = “正在重试、现在连不上”，
+    # 而不是“连接正常”。恢复了 _last_error 会被清掉，所以这不是陈旧状态。
+    if status.get("last_error"):
+        return IntegrationStatus(IntegrationState.ERROR, status["last_error"])
+    if phase == "polling":
+        return IntegrationStatus(IntegrationState.CONNECTED,
+                                 f"receiving as {status.get('account_id') or 'the bound account'}")
+    if phase == "not-logged-in":
+        return IntegrationStatus(IntegrationState.INSTALLED_BUT_UNCONFIGURED,
+                                 "not logged in — press Scan to log in")
+    return IntegrationStatus(IntegrationState.CONFIGURED, "enabled — the gateway is not running")
+
+
+def _wechat_payload() -> dict | None:
+    """连接页卡片要的微信细节。gateway 没在跑就是 None。
+
+    只挑能公开的字段。`status()` 本身就不带 token（它连后四位都不回），这里再加
+    一层：显式列出来，以后往 status 里加东西也不会顺着这个口子漏到浏览器。
+    """
+    if _wechat is None:
+        return None
+    status = _wechat.status()
+    return {
+        "phase": status.get("phase", ""),
+        "accountId": status.get("account_id", ""),
+        "userId": status.get("user_id", ""),
+        "allowed": status.get("allowed", []),
+        "refused": status.get("refused", 0),
+        "refusedSenders": status.get("refused_senders", []),
+        "noId": status.get("no_id", 0),
+        "handled": status.get("handled", 0),
+        "failed": status.get("failed", 0),
+        "lastError": status.get("last_error", ""),
+        "unfinished": status.get("unfinished", []),
+        "pending": status.get("pending", []),
+    }
+
+
+def wechat_status_provider(key: str):
+    """连接页上微信卡片的实时状态。
+
+    只在**本进程真的装着 gateway** 时回答；没装就返回 None，让 `_status` 走它的
+    默认路径（字段齐 = configured，缺白名单 = needs setup）。不编造一个没在跑的
+    连接状态。
+    """
+    if key != "wechat" or _wechat is None:
+        return None
+    return wechat_phase_status(_wechat.status())
+
+
+def wechat_reloader(keys: set) -> dict:
+    """设置变更后只重启微信 gateway。**不重建 Waku 实例。**"""
+    if "wechat" not in keys:
+        return {}
+    from waku.integrations import IntegrationState, IntegrationStatus
+
+    gateway = apply_wechat_gateway()
+    if gateway is None:
+        return {"wechat": IntegrationStatus(IntegrationState.NOT_CONFIGURED, "")}
+    return {"wechat": wechat_phase_status(gateway.status())}
+
+
+# ------------------------------------------------ 微信的本机接口
+#
+# 三个都只给本机 dashboard 用（另有一层地址检查，见 Handler）。二维码和状态
+# **都不含凭据**：bot_token 和 context_token 从不进任何 HTTP 响应。
+
+
+def wechat_login(payload: dict) -> dict:
+    """取一张二维码。返回画好的 SVG 和它编码的 URL —— 没有 token。"""
+    global _pending_login
+    from waku.gateway import wechat
+
+    try:
+        pending = wechat.begin_login()
+        svg = wechat.qr_svg(pending["url"])
+    except wechat.ApiError as exc:
+        return {"error": f"could not fetch a QR code: {exc}"}
+    except RuntimeError as exc:      # qrcode 没装
+        return {"error": str(exc)}
+    _pending_login = pending
+    return {"ok": True, "svg": svg}
+
+
+def wechat_login_status(payload: dict) -> dict:
+    """推进一步扫码。每次调用对应一次 iLink 状态查询（约 30s 的长轮询）。"""
+    global _pending_login
+    from waku.gateway import wechat
+
+    if not _pending_login:
+        return {"error": "no login is in progress — press Scan again"}
+    try:
+        result = wechat.poll_login(_pending_login["qrcode"])
+    except wechat.ApiError as exc:
+        return {"status": "wait", "note": f"status check failed, retrying: {exc}"}
+    if result["status"] in ("confirmed", "expired"):
+        _pending_login = None
+    if result["status"] == "confirmed":
+        # 凭据刚落地，而跑着的那个 gateway 是登录前建的（它当时看到的是
+        # not-logged-in）。重装一个，它就会开始收消息。
+        apply_wechat_gateway()
+    return result
+
+
+def wechat_logout(payload: dict) -> dict:
+    """忘掉凭据和游标，并停掉在跑的轮询。"""
+    global _pending_login
+    from waku.gateway import wechat
+
+    wechat.clear_login()
+    _pending_login = None
+    gateway = apply_wechat_gateway()
+    return {"ok": True,
+            "phase": gateway.status()["phase"] if gateway is not None else "not-logged-in",
+            "message": "logged out — the bot will not answer until you scan again"}
 
 
 def serve_until_signalled(server: ThreadingHTTPServer) -> None:

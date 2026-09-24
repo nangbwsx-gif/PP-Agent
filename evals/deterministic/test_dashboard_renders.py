@@ -78,7 +78,23 @@ FIXTURE = {
                      "fields": [], "install_command": "", "setup_url": ""},
                     {"key": "tavily", "group": "Search & Observability", "name": "Tavily",
                      "what": "w", "status": {"state": "connected", "message": "ok"},
-                     "fields": [], "install_command": "", "setup_url": ""}],
+                     "fields": [], "install_command": "", "setup_url": ""},
+                    # The Channels member. Its card renders two extra buttons and a
+                    # detail line, so it needs to be in here or that code is never
+                    # executed by the only test that actually calls the view.
+                    {"key": "wechat", "group": "Channels", "name": "WeChat",
+                     "what": "w", "status": {"state": "installed_but_unconfigured",
+                                             "message": "not logged in — press Scan to log in"},
+                     "fields": [], "install_command": "pip install -e '.[wechat]'",
+                     "setup_url": ""}],
+    # Every branch of the card's detail line, plus a pending delivery, so
+    # wechatCardDetail() is exercised rather than skipped for lack of data.
+    "wechat": {"phase": "polling", "accountId": "bot@im.bot", "userId": "me@im.wechat",
+               "allowed": ["me@im.wechat"], "refused": 1, "refusedSenders": ["stranger"],
+               "noId": 2, "handled": 3, "failed": 0, "lastError": "",
+               "unfinished": ["m-interrupted"],
+               "pending": [{"messageId": "m1", "attempts": 1, "sentChunks": 0,
+                            "totalChunks": 1, "lastError": "boom"}]},
     "providers": [{"key": "deepseek", "fields": []}],
     "settings": {"provider": "deepseek", "model": "deepseek-v4-pro",
                  "small_model": "deepseek-flash", "experimental": False,

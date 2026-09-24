@@ -314,14 +314,126 @@ function connectionCard(item){
   const why = (item.status && item.status.message
     && (item.status.state === "installed_but_unconfigured" || item.status.state === "error"))
     ? `<div class="connwhy">${esc(item.status.message)}</div>` : "";
+  // WeChat is the one connection you finish somewhere else (a phone), so it needs
+  // two actions the others do not, plus the counts that tell you it is doing
+  // something: replies it could not deliver, messages it had to refuse.
+  const isWechat = item.key === "wechat";
+  const wechatActions = isWechat ? `
+      ${uiButton(t("conn.wechat.scan", "Scan to log in"), {level: "secondary", onclick: "openWechatLogin()"})}
+      ${uiButton(t("conn.wechat.logout", "Log out"), {level: "tertiary", danger: true, onclick: "logOutWechat()"})}` : "";
   return uiCard(`
     <img class="provlogo connlogo" src="/static/logos/connections/${esc(item.key)}.svg" alt="">
     <div class="connstatus ${display.className}"><span class="conndot"></span>${esc(display.label)}</div>
     ${why}
+    ${isWechat ? wechatCardDetail() : ""}
     <div class="conndesc">${esc(item.what)}</div>
     <div class="provactions connactions">
       ${uiButton(action, {level: "secondary", onclick: `openConnectionModal('${esc(item.key)}')`})}
+      ${wechatActions}
     </div>`, {title: esc(item.name), cls: "provcard conncard"});
+}
+
+// What the running gateway is actually doing. Rendered only when there is a
+// gateway in this process (D.wechat is null otherwise), so it never invents a
+// count for a bot that is not running.
+function wechatCardDetail(){
+  const w = (D && D.wechat) || null;
+  if (!w) return "";
+  const bits = [];
+  if (w.pending && w.pending.length)
+    bits.push(t("conn.wechat.pending", "{n} reply(ies) not delivered yet").replace("{n}", w.pending.length));
+  if (w.unfinished && w.unfinished.length)
+    bits.push(t("conn.wechat.unfinished", "{n} interrupted message(s)").replace("{n}", w.unfinished.length));
+  if (w.refused)
+    bits.push(t("conn.wechat.refused", "{n} refused sender(s)").replace("{n}", w.refused));
+  if (w.noId)
+    bits.push(t("conn.wechat.noId", "{n} message(s) with no id").replace("{n}", w.noId));
+  if (!bits.length) return "";
+  return `<div class="connwhy">${esc(bits.join(" · "))}</div>`;
+}
+
+// ---- WeChat login (the one flow you finish with a phone)
+//
+// The QR is drawn by the server (qrcode's pure-Python SVG factory) and served from
+// a local-only endpoint, so no QR library and no second login implementation land
+// in the browser. The pending session lives on the server: the qrcode token never
+// reaches this page.
+let wechatLoginStopped = false;
+
+function openWechatLogin(){
+  const w = (D && D.wechat) || {};
+  const bound = w.userId
+    ? `<div class="connwhy">${esc(t("conn.wechat.replaces", "This replaces the account bound now ({id}).").replace("{id}", w.userId))}</div>` : "";
+  openDialog(`<div data-wechat-login>
+      <header class="connmodal-head">
+        <img class="provlogo connlogo" src="/static/logos/connections/wechat.svg" alt="">
+        <div class="connmodal-title">
+          <h3 id="wechat-login-title">${esc(t("conn.wechat.title", "Log in to WeChat"))}</h3>
+        </div>
+        ${uiButton(t("ui.close", "Close"), {level: "tertiary", size: "sm", cls: "connmodal-close", onclick: "closeDialog()", attrs: 'aria-label="Close"'})}
+      </header>
+      <p class="conndesc">${esc(t("conn.wechat.howto", "On your phone: WeChat, +, Scan, then confirm. This page waits for it — nothing to type in a terminal."))}</p>
+      ${bound}
+      <div class="wechat-qr" id="wechat-qr"></div>
+      <div class="connmodal-message" id="wechat-login-msg" aria-live="polite"></div>
+      <div class="dialog-foot">
+        ${uiButton(t("conn.wechat.getQr", "Get a QR code"), {level: "primary", onclick: "startWechatLogin()"})}
+      </div>
+    </div>`, {label: t("conn.wechat.title", "Log in to WeChat"), onClose: () => {
+      wechatLoginStopped = true;
+      if (activeView === "connections") refresh();
+    }});
+  startWechatLogin();
+}
+
+async function startWechatLogin(){
+  const qr = document.getElementById("wechat-qr");
+  const msg = document.getElementById("wechat-login-msg");
+  if (!qr || !msg) return;
+  wechatLoginStopped = false;
+  qr.innerHTML = "";
+  msg.textContent = t("conn.wechat.fetching", "Asking WeChat for a QR code…");
+  const r = await postJSON("/api/wechat/login", {});
+  if (wechatLoginStopped || !document.getElementById("wechat-qr")) return;
+  if (r.error){ msg.textContent = r.error; return; }
+  qr.innerHTML = r.svg;                 // server-drawn, local-only endpoint
+  msg.textContent = t("conn.wechat.scanNow", "Scan it with WeChat, then confirm on the phone.");
+  pollWechatLogin();
+}
+
+// One call per step: the server's status endpoint does a single iLink long poll,
+// which is why each of these can take up to about thirty seconds.
+async function pollWechatLogin(){
+  if (wechatLoginStopped) return;
+  const qr = document.getElementById("wechat-qr");
+  const msg = document.getElementById("wechat-login-msg");
+  if (!qr || !msg) return;
+  const r = await postJSON("/api/wechat/login/status", {});
+  if (wechatLoginStopped || !document.getElementById("wechat-login-msg")) return;
+  if (r.error){ msg.textContent = r.error; return; }
+  if (r.status === "confirmed"){
+    qr.innerHTML = "";
+    msg.textContent = t("conn.wechat.confirmed", "Logged in. Messages are being received now.");
+    refresh();
+    setTimeout(closeDialog, 1500);
+    return;
+  }
+  if (r.status === "expired"){
+    qr.innerHTML = "";
+    msg.textContent = t("conn.wechat.expired", "That QR expired. Press Get a QR code again.");
+    return;
+  }
+  msg.textContent = r.status === "scaned"
+    ? t("conn.wechat.scaned", "Scanned — confirm on the phone.")
+    : (r.note || t("conn.wechat.waiting", "Waiting for the scan…"));
+  pollWechatLogin();
+}
+
+async function logOutWechat(){
+  if (!confirm(t("conn.wechat.confirmLogout", "Log out of WeChat? The bot stops answering until you scan again."))) return;
+  const r = await postJSON("/api/wechat/logout", {});
+  if (r.error){ alert(r.error); return; }
+  if (activeView === "connections") refresh();
 }
 
 function connectionsGrid(items){

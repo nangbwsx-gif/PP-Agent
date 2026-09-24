@@ -24,6 +24,7 @@ and **`main.js` loads last** (it runs the bootstrap).
 | `mode.js`    | personal-user mode vs developer mode: hides the developer pages from the sidebar and holds the switch in Behaviour. `--dev` opens it, and an explicit choice in the UI beats that flag |
 | `util.js`    | `esc`, markdown renderer, core globals (`D`, `editing`), `postJSON`, `reveal`, `stampSlots` |
 | `theme.js`   | the system / light / dark toggle (`cycleTheme`), stored as `waku-theme` like the Memory console |
+| `ui.js`      | the primitives every view builds from — `uiCard`, `uiBadge`, `uiButton`, `uiNotice`, `uiTable`, `openDialog` and friends. Read [docs/context/design-system.md](../../../docs/context/design-system.md) before reaching for markup instead |
 | `memory.js`  | inline Memory / SOUL / skill editing actions |
 | `models.js`  | `applyModel` (the one `/api/settings` writer), model picker / catalog / pins |
 | `render.js`  | formatters + chat card renderers (`stagesRow`/`teleFooter`) + chatlog + streaming + `sendChat` |

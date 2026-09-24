@@ -661,6 +661,9 @@ class WeChatGateway:
             if self._announced_failure:
                 self._announced_failure = False
                 self._announce("WeChat polling recovered")
+            # 成功了就把上次的错误清掉。否则一个瞬断会永远挂在连接页上：
+            # “上次出过错”不等于“现在还在错”。
+            self._last_error = ""
             backoff = self._poll_interval
             cursor = self._handle_batch(host, base_url, token, response)
             if cursor is None:
@@ -900,60 +903,116 @@ def render_qr(url: str) -> None:
     code.print_ascii(invert=True)
 
 
+def qr_svg(url: str) -> str:
+    """把二维码画成 SVG 给浏览器看。
+
+    缺 qrcode 就抛 RuntimeError（带安装提示）而不是崩 —— 它是 `[wechat]` extra，
+    不是默认依赖。SVG 而不是 PNG：qrcode 自带的 svg 工厂是纯 Python，PNG 要 pillow。
+    """
+    try:
+        import qrcode
+        import qrcode.image.svg
+    except ImportError as exc:
+        raise RuntimeError(
+            "qrcode is not installed — pip install 'waku-agent[wechat]'"
+        ) from exc
+    code = qrcode.QRCode(border=1, error_correction=qrcode.constants.ERROR_CORRECT_L,
+                         image_factory=qrcode.image.svg.SvgPathImage)
+    code.add_data(url)
+    code.make(fit=True)
+    body = code.make_image().to_string().decode("utf-8")
+    # qrcode 画的是黑模块 + 透明底，在深色主题下就是一坨看不见的黑。
+    # 白底必须跟着二维码走，不能靠 CSS —— 设计系统不允许 CSS 写颜色，而且
+    # 对比度该属于这个 asset，不属于页面主题（换主题不该让码扫不动）。
+    head, _, rest = body.partition(">")
+    return f'{head}><rect width="100%" height="100%" fill="#ffffff"/>{rest}'
+
+
+# ------------------------------------------------------------- 登录流程
+#
+# 拆成小块，因为有两个驱动者：CLI 自己循环，dashboard 的 HTTP 请求每次只推进一步。
+# **协议只实现一遍** —— 浏览器那条路不允许有第二份取码 / 轮询 / 落盘的逻辑。
+
+
+def begin_login(api: ILinkApi | None = None) -> dict:
+    """取一张登录二维码。返回 `{"qrcode": token, "url": ...}`；失败抛 ApiError。"""
+    qr = (api or ILinkApi()).fetch_qr_code()
+    token = str(qr.get("qrcode", ""))
+    if not token:
+        raise ApiError(f"the QR endpoint returned no token: {qr}")
+    return {"qrcode": token, "url": str(qr.get("qrcode_img_content", ""))}
+
+
+def poll_login(qrcode: str, state: GatewayState | None = None,
+               api: ILinkApi | None = None) -> dict:
+    """问一次扫码状态；确认了就落盘凭据。
+
+    返回的 dict **绝不含 bot_token**，因为它会被原样送进 HTTP 响应。
+    """
+    state = state or GatewayState(state_directory())
+    status = (api or ILinkApi()).fetch_qr_status(qrcode)
+    name = str(status.get("status", "wait"))
+    if name == "confirmed":
+        token = str(status.get("bot_token", ""))
+        if not token:
+            raise ApiError("confirmed but the response carried no bot_token")
+        state.save_credentials({
+            "token": token,
+            "baseUrl": status.get("baseurl") or BASE_URL,
+            "accountId": status.get("ilink_bot_id", ""),
+            "userId": status.get("ilink_user_id", ""),
+            "savedAt": datetime.now(UTC).isoformat(timespec="seconds"),
+        })
+        state.clear_cursor()      # 换了身份，旧的流位置没有意义
+    return {
+        "status": name,
+        "accountId": str(status.get("ilink_bot_id", "")),
+        "userId": str(status.get("ilink_user_id", "")),
+    }
+
+
+def clear_login(state: GatewayState | None = None) -> None:
+    """忘掉凭据和游标。去重记录留着，这样重投不会重放旧消息。"""
+    (state or GatewayState(state_directory())).clear_credentials()
+
+
 def cmd_login(force: bool = False, timeout: float = 180.0) -> int:
     state = GatewayState(state_directory())
-    if state.credentials() and not force:
-        print(f"already logged in ({state.credentials_path})")
+    credentials = state.credentials()
+    if credentials and not force:
+        print(f"already logged in as {credentials.get('accountId', '')} "
+              f"({state.credentials_path})")
         print("use `waku wechat login --force` to scan again")
         return 0
 
-    api = ILinkApi()
     try:
-        qr = api.fetch_qr_code()
+        pending = begin_login()
     except ApiError as exc:
         print(f"could not fetch a QR code: {exc}")
         return 1
 
-    token, url = qr.get("qrcode", ""), qr.get("qrcode_img_content", "")
-    if not token:
-        print(f"the QR endpoint returned no token: {qr}")
-        return 1
-
     print("scan this with WeChat, then confirm on the phone:")
-    render_qr(url)
-    print(f"or encode this URL yourself: {url}")
+    render_qr(pending["url"])
+    print(f"or encode this URL yourself: {pending['url']}")
     print("waiting for the scan (each status call holds ~30s)…")
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            status = api.fetch_qr_status(token)
+            result = poll_login(pending["qrcode"], state)
         except ApiError as exc:
             print(f"status check failed: {exc}; retrying")
             time.sleep(RETRY_BASE_SECONDS)
             continue
-        state_name = status.get("status")
-        if state_name == "expired":
+        if result["status"] == "expired":
             print("the QR expired — run `waku wechat login` again")
             return 1
-        if state_name == "confirmed":
-            if not status.get("bot_token"):
-                print(f"confirmed but no bot_token in the response: {status}")
-                return 1
-            state.save_credentials({
-                "token": status["bot_token"],
-                "baseUrl": status.get("baseurl") or BASE_URL,
-                "accountId": status.get("ilink_bot_id", ""),
-                "userId": status.get("ilink_user_id", ""),
-                "savedAt": datetime.now(UTC).isoformat(timespec="seconds"),
-            })
-            state.clear_cursor()      # 换了身份，旧的流位置没有意义
+        if result["status"] == "confirmed":
             print(f"logged in — credentials saved to {state.credentials_path}")
-            print(f"accountId={status.get('ilink_bot_id', '')}")
-            # 白名单**不替你写** —— 静默改安全配置比多敲一行糟得多。
-            # 这里只把要加的那行原样打印出来，复制粘贴即可。
-            bound = status.get("ilink_user_id", "")
+            print(f"accountId={result['accountId']}")
+            bound = result["userId"]
             if bound:
+                # 白名单**不替你写** —— 静默改安全配置比多敲一行糟得多。
                 print()
                 print("now allow your own WeChat account to talk to it — add this to .env:")
                 print("  WAKU_WECHAT=1")
@@ -1020,7 +1079,7 @@ def cmd_status() -> int:
 
 def cmd_logout() -> int:
     state = GatewayState(state_directory())
-    state.clear_credentials()
+    clear_login(state)
     print(f"credentials and cursor removed from {state.directory}")
     print("(the dedup record is kept, so a re-delivery cannot replay an old message)")
     return 0

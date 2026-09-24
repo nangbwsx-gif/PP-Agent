@@ -27,13 +27,15 @@ a failed rebuild keeps the working instance. Shutdown refuses new requests,
 answers the ones already queued, and closes the MCP bridge, the SQLite
 connection and the listening socket.
 
-**The WeChat gateway is off by default and refuses everyone until you say
-otherwise.** `WAKU_WECHAT=1` turns it on; `WAKU_WECHAT_ALLOW` lists the WeChat
-user ids allowed to talk to it, checked before anything can reach the host, and
-empty means nobody. `waku wechat login` prints the line to paste but does not
-write it. Enabled-but-not-logged-in is a normal state, and a WeChat problem — no
-network, an expired session, a failed send — is reported and retried on the
-WeChat side only; the browser keeps working.
+**The WeChat gateway is off by default, refuses everyone until you say otherwise,
+and is set up from the Connections page.** Scan puts a QR on the page and waits
+for your phone; the card shows what the gateway is doing (undelivered replies,
+interrupted messages, refused senders) and saving its settings restarts that
+gateway alone. `WAKU_WECHAT_ALLOW` lists the WeChat user ids allowed to talk to
+it, checked before anything can reach the host, and empty means nobody. Enabled-
+but-not-logged-in is a normal state, and a WeChat problem — no network, an expired
+session, a failed send — is reported and retried on the WeChat side only; the
+browser keeps working.
 
 A turn runs at most once per message (the id is claimed before the turn) and a
 reply is delivered at least once (failed sends wait in a persistent outbox and
@@ -42,16 +44,19 @@ guaranteed — a duplicate reply after a retry that had actually landed, no
 delivery receipt from WeChat, a stale `context_token` that cannot be re-opened —
 are listed in [commands.md](commands.md#what-the-delivery-guarantees-actually-are).
 
-**The WeChat side has not been through a real device since it moved out of the
-lab.** The protocol, the login and the round trip were verified live on
-2026-09-23 in `lab/wechat-ilink/`, and every path in `waku/gateway/wechat.py` is
-covered offline by `evals/deterministic/test_wechat_gateway.py`, but nobody has
-scanned a QR with the gateway itself running. Treat it as working-but-unproven.
+**The WeChat card's browser flow has not been used on a real phone.** The protocol,
+the login and the round trip were verified live on 2026-09-23 in
+`lab/wechat-ilink/`, the CLI login and a real WeChat conversation were verified
+through the gateway on 2026-09-24, and every path in `waku/gateway/wechat.py` and
+`waku/ops/dashboard.py` is covered offline by `evals/deterministic/`. Nobody has
+scanned the dashboard's own QR yet. Treat that page as working-but-unproven.
 
-**768 deterministic evals pass offline**, with no API key; 38 more skip without
-one. On Windows 3 of them fail (temp-file and process assumptions, not this
-checkout) and 2 more need `python -X utf8` to read files with the locale codec
-— see Known broken. CI runs the offline tier on every PR along with
+**797 deterministic evals pass offline**, with no API key; 38 more skip without
+one. On Windows 2 of them fail (temp-file and process assumptions, not this
+checkout — the third used to fail too, and turned out to be the eval suite writing
+to the developer's own `.env`, now fixed in `evals/conftest.py`) and 2 more need
+`python -X utf8` to read files with the locale codec — see Known broken. CI runs
+the offline tier on every PR along with
 ruff, the skills validator, and a check that `.env.example` still matches the
 integrations registry.
 
@@ -72,7 +77,7 @@ Nothing here is a surprise. If you hit one of these, the issue exists.
 | GPT-5.6 tool calls fail on Chat Completions | — | #146 |
 | OpenCode Zen fails with a rate-limit error | #112 | #113 |
 | Google Calendar sign-in has no bundled OAuth client, so `waku connect google` needs your own `.waku/credentials.json` | — | — |
-| On Windows `pytest evals/deterministic` needs `-X utf8`: `test_static_assets.py` and `test_version.py` read files with the locale (GBK) codec. `test_coding_eval.py` (2) and `test_provider_disabled.py` (1) fail on temp-file and subprocess assumptions | `evals/deterministic/` | — |
+| On Windows `pytest evals/deterministic` needs `-X utf8`: `test_static_assets.py` and `test_version.py` read files with the locale (GBK) codec. `test_coding_eval.py` (2) fail on temp-file and subprocess assumptions | `evals/deterministic/` | — |
 
 **Providers are the recurring theme.** Three of the items above are one
 provider or another, and there is no single place that says which providers

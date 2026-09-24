@@ -38,6 +38,12 @@ POST_ROUTES = {
     "/api/compare/clear",
     "/api/compare/regrade",
     "/api/compare/delete_run",
+    # The WeChat login trio. They are local-only (see the guard in do_POST), and
+    # the pinned list is here so renaming one on the server breaks this test
+    # instead of breaking a button nobody clicks until they need it.
+    "/api/wechat/login",
+    "/api/wechat/login/status",
+    "/api/wechat/logout",
 }
 
 # Paths served on GET, either exactly or as a prefix.

@@ -41,23 +41,37 @@ One-to-one text with one bound WeChat account, over the iLink protocol the
 [lab experiment](../lab/wechat-ilink/README.md) measured. It is a gateway: the
 browser and WeChat share one Waku through the host, one turn at a time.
 
+**Set it up from the dashboard.** `waku serve` → Connections → the WeChat card.
+Its Scan button puts a QR on the page, waits for your phone, and starts receiving
+the moment you confirm — no terminal involved. The card's Edit dialog holds the
+same two settings as the file below, and saving them restarts this gateway and
+nothing else: a channel toggle never rebuilds the Waku instance or interrupts a
+turn that is already running.
+
+The card also tells you what the gateway is doing: how many replies it produced
+but has not delivered, how many messages it had to interrupt, how many senders it
+refused.
+
 ```bash
-pip install -e '.[wechat]'   # only needed for the terminal QR
-waku wechat login            # scan, confirm on the phone, then paste the two
-                             # .env lines it prints
-# then, in .env:
-#   WAKU_WECHAT=1
-#   WAKU_WECHAT_ALLOW=<the userId login just printed>
-waku wechat status           # allowlist? logged in? cursor? undelivered replies?
+pip install -e '.[wechat]'   # only needed to draw a QR code; the gateway itself is stdlib
+waku serve                   # then: Connections → WeChat → Scan to log in
+```
+
+The same things from a terminal, for a machine with no browser:
+
+```bash
+waku wechat                  # status: enabled? logged in? cursor? undelivered replies?
+waku wechat login            # prints an ASCII QR and the two .env lines to paste
 waku wechat logout           # forget the credentials, keep the dedup record
 ```
 
 **The allowlist is mandatory and fails closed.** An inbound message is checked
-against `WAKU_WECHAT_ALLOW` **before anything can reach the host**, so `login`
-prints the line but deliberately does not write it: silently editing a security
-setting is worse than pasting one line. With the list empty, `status` says so and
-nobody can talk to the bot. Unauthorised senders are counted and listed in
-`status` so you can see who knocked; they get no reply.
+against `WAKU_WECHAT_ALLOW` **before anything can reach the host**, and an empty
+list means nobody. The login flow prints the id to add and the card's dialog has
+an editable field for it — the one thing it deliberately does not do is write the
+line for you, because silently editing a security setting is worse than pasting
+one. Unauthorised senders are counted and listed so you can see who knocked; they
+get no reply.
 
 What it does and does not do:
 

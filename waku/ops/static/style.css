@@ -50,6 +50,14 @@
   .rail > a:hover{color:var(--text-ink)}
   .rail > a.on{border-left-color:var(--accent);background:var(--surface-raised);color:var(--text-ink)}
   .rail .n{color:var(--text-faint);font-variant-numeric:tabular-nums}
+  /* The WeChat QR: a server-drawn SVG, sized here and coloured by the asset
+     itself (the design system forbids colours here, and contrast belongs to the
+     code, not to the page theme). */
+  .wechat-qr{margin:var(--space-3) 0;padding:var(--space-3);display:flex;align-items:center;
+             justify-content:center;min-height:calc(var(--spacing) * 26);
+             border:var(--rule-width) solid var(--rule);border-radius:var(--radius)}
+  .wechat-qr svg{width:calc(var(--spacing) * 22);height:calc(var(--spacing) * 22)}
+
   .r-bottom{margin-top:auto;display:flex;align-items:center;padding:var(--space-2);border-top:var(--rule-width) solid var(--rule)}
   #theme-toggle{margin-left:auto;display:inline-flex;background:transparent;border:var(--rule-width) solid transparent;
                 color:var(--text-muted);cursor:pointer;padding:var(--space-2)}

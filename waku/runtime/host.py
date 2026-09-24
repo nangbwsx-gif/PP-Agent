@@ -145,6 +145,31 @@ class Host:
         if running:
             self._start_gateway(gateway)
 
+    def set_gateway(self, gateway: Gateway) -> None:
+        """装上或**替换**一个 gateway：同名的旧的先停掉再摘掉。
+
+        `register()` 只往列表里加，所以重复调用会把同名 gateway 堆成好几份 ——
+        而“改设置只重启这一个渠道”正是要避免那个。这也只碰 gateway：Host 持有的
+        Waku 实例动都不动，对话中的一轮不会被重建打扰。
+        """
+        with self._lock:
+            replaced = [g for g in self._gateways if g.name == gateway.name]
+            self._gateways = [g for g in self._gateways if g.name != gateway.name]
+            self._gateways.append(gateway)
+            running = self._started and self._accepting
+        for old in replaced:
+            self._stop_gateway(old)
+        if running:
+            self._start_gateway(gateway)
+
+    def remove_gateway(self, name: str) -> None:
+        """停掉并摘掉一个 gateway。停用一个渠道走这里。"""
+        with self._lock:
+            removed = [g for g in self._gateways if g.name == name]
+            self._gateways = [g for g in self._gateways if g.name != name]
+        for gateway in removed:
+            self._stop_gateway(gateway)
+
     def gateway_names(self) -> tuple[str, ...]:
         with self._lock:
             return tuple(g.name for g in self._gateways)
@@ -160,6 +185,13 @@ class Host:
             with self._lock:
                 self._gateway_errors.pop(gateway.name, None)
         except Exception as exc:  # 任何异常都不允许往上冒
+            with self._lock:
+                self._gateway_errors[gateway.name] = f"{type(exc).__name__}: {exc}"
+
+    def _stop_gateway(self, gateway: Gateway) -> None:
+        try:
+            gateway.stop()
+        except Exception as exc:
             with self._lock:
                 self._gateway_errors[gateway.name] = f"{type(exc).__name__}: {exc}"
 
@@ -211,11 +243,7 @@ class Host:
         # 只有它们能中止。跑在它们手里的 `ask()` 要么等到这一轮结束，要么在下面
         # 被明确拒绝，不会一直挂着。
         for gateway in gateways:
-            try:
-                gateway.stop()
-            except Exception as exc:
-                with self._lock:
-                    self._gateway_errors[gateway.name] = f"{type(exc).__name__}: {exc}"
+            self._stop_gateway(gateway)
 
         with self._lock:
             rejected = self._drain_locked()
