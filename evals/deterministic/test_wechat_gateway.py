@@ -70,10 +70,11 @@ class FakeILink:
     spinning, so a test never sees a busy loop.
     """
 
-    def __init__(self, batches=None, *, send_failures=0, qr_statuses=None):
+    def __init__(self, batches=None, *, send_failures=0, qr_statuses=None, instant=False):
         self.batches = list(batches or [])
         self.send_failures = send_failures
         self.qr_statuses = list(qr_statuses or [])
+        self.instant = instant
         self.sent = []                 # every post_message payload that SUCCEEDED
         self.posts = []                # every attempt, failures included
         self.cursors_seen = []         # every cursor passed to fetch_updates
@@ -97,7 +98,9 @@ class FakeILink:
         # 报错会在“已恢复”之后立刻又报一次失败，把日志和评测都弄成随机的。
         # 等待要短：gateway 的 stop() 无法中断一次在飞的调用（真实长轮询也一样），
         # 所以这里停太久会让每个评测都付掉 join 的超时。
-        self.exhausted.wait(0.05)
+        # instant：既不挂起也不报错，就是服务器“立刻返回”那种情形。
+        if not self.instant:
+            self.exhausted.wait(0.05)
         return {"msgs": [], "get_updates_buf": cursor, "ret": 0}
 
     def post_message(self, base_url, token, message):
@@ -157,6 +160,34 @@ def test_without_credentials_it_does_not_poll_and_does_not_error(tmp_path):
         assert gateway.status()["phase"] == "not-logged-in"
         assert not gateway.running
     assert api.cursors_seen == [], "it polled without credentials"
+
+
+def test_a_server_that_answers_at_once_cannot_turn_polling_into_a_busy_loop(tmp_path, monkeypatch):
+    """一次成功轮询到下一次之间必须有下限。
+
+    2026-09-23 lab 里实测：getupdates 本该挂住 ~18 秒，但它有时立刻返回，于是循环
+    空转到网络往返的速度 —— 12 req/s、16 小时约 70 万次请求，那段时间微信那边看
+    起来就是“bot 不回话”。产品 gateway 搬了这个循环的形状，却没搬下限。
+    """
+    # 先断言装运的值本身。下面会 monkeypatch 它，那样一改就只剩“循环读了这个
+    # 常量”，下限被改成 0 也照样绿。
+    assert wechat.MIN_POLL_INTERVAL_SECONDS >= 1.0, (
+        "把轮询下限设成 0 等于没有下限 —— 那就是空转"
+    )
+    monkeypatch.setattr(wechat, "MIN_POLL_INTERVAL_SECONDS", 0.05)
+    monkeypatch.setattr(wechat, "RETRY_BASE_SECONDS", 0.0)
+    api = FakeILink(instant=True)          # 既不挂起也不报错：就是“立刻返回”
+    gateway = make_gateway(tmp_path, api)
+
+    gateway.start(None)                    # 空批次不会碰到 host，所以 None 够用
+    time.sleep(0.5)
+    gateway.stop()
+
+    # 0.5 秒 / 0.05 秒下限 → 大概 10 次。没有下限的话这里是几千次（实测过 12 req/s）。
+    assert len(api.cursors_seen) <= 20, (
+        f"轮询了 {len(api.cursors_seen)} 次 —— 在空转，会把账号打进限流"
+    )
+    assert len(api.cursors_seen) >= 3, "把轮询拖得这么慢，正常消息也会迟到"
 
 
 def test_with_credentials_it_polls(tmp_path):

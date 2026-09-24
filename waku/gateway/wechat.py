@@ -92,6 +92,12 @@ SESSION_EXPIRED_CODE = -14
 RETRY_BASE_SECONDS = 1.0
 RETRY_MAX_SECONDS = 30.0
 
+# 服务器本该把 getupdates 挂住 ~18 秒才返回，可实测它有时立刻返回。下一次请求
+# 之间必须有个下限，否则这个循环就空转到网络往返的速度：2026-09-23 lab 里跑了
+# 16 小时、约 70 万次请求（12 req/s），那段时间微信那边看起来就是“bot 不回话”。
+# 代价是服务器立刻返回时最多多等一秒多。
+MIN_POLL_INTERVAL_SECONDS = 2.0
+
 # 停 gateway 时最多等它的长轮询线程多久。线程是 daemon，等不到也不会拖住进程。
 GATEWAY_STOP_JOIN_SECONDS = 5.0
 
@@ -631,6 +637,7 @@ class WeChatGateway:
         backoff = self._poll_interval
 
         while not self._stop.is_set():
+            started = time.monotonic()
             try:
                 response = self._api.fetch_updates(base_url, token, cursor)
             except ApiError as exc:
@@ -671,6 +678,11 @@ class WeChatGateway:
                 # 靠 message_id 认领去重。
                 self._stop.wait(self._poll_interval)
                 cursor = self._state.cursor()
+            # 一次成功轮询到下一次之间的下限。放在这里，所有成功路径都得过。
+            # 出错的那几条 continue 走不到这儿，但它们已经等了 backoff。
+            self._stop.wait(
+                max(0.0, MIN_POLL_INTERVAL_SECONDS - (time.monotonic() - started))
+            )
 
     def _handle_batch(self, host: Host, base_url: str, token: str, response: dict) -> str | None:
         """处理一批消息，**最后**才推进游标。返回新游标，或 None 表示这批没处理完。"""
