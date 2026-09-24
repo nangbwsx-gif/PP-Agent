@@ -433,6 +433,37 @@ class Outbox:
         ]
 
 
+class DecisionLog:
+    """最近几条入站消息被怎么处理的，以及为什么。
+
+    存在的理由很具体：gateway 的计数字段在内存里，而 `waku wechat status` 是
+    **另一个进程** —— 没有这个东西，“它为什么不回我” 就只能靠猜。一次拒绝只能看到
+    “消息被取走了、没有回复”，而原因（不在白名单 / 没有 ID / 没有 context_token）
+    完全不可见。
+
+    只记 message_id 和原因，**不记正文**：正文属于对话，不属于日志。
+    """
+
+    LIMIT = 20
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._entries: list[dict] = list(_read_json(path, {}).get("entries") or [])
+
+    def record(self, outcome: str, message_id: str = "", reason: str = "") -> None:
+        self._entries.append({
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "messageId": message_id or "(none)",
+            "outcome": outcome,
+            "reason": reason,
+        })
+        del self._entries[:-self.LIMIT]
+        _write_json(self.path, {"entries": self._entries})
+
+    def recent(self) -> list[dict]:
+        return list(self._entries)
+
+
 class GatewayState:
     """gateway 落在磁盘上的一切，全在 `<home>/wechat/` 下。
 
@@ -446,6 +477,7 @@ class GatewayState:
         self.cursor_path = directory / "cursor.json"
         self.seen = SeenMessages(directory / "seen.json")
         self.outbox = Outbox(directory / "outbox.json")
+        self.decisions = DecisionLog(directory / "decisions.json")
 
     def credentials(self) -> dict | None:
         return _read_json(self.credentials_path, None)
@@ -511,6 +543,7 @@ class WeChatGateway:
         self._no_id = 0                          # 没有 message_id、无法去重的消息
         # 上一次跑崩在回合中间的那些 id。start() 时取一次，之后由 status 报告。
         self._interrupted: list[str] = []
+        self._announced_decisions: set[str] = set()
         # 当前这轮连续失败是否已经报过。断线重试是静默的（否则日志被刷爆），
         # 但第一次失败和恢复各报一次 —— 用户需要知道它掉线了。
         self._announced_failure = False
@@ -580,6 +613,9 @@ class WeChatGateway:
                 # 已产生但还没确认送达的回复。这里非空才是真信号：
                 # 它意味着“回合跑过了，但用户可能没看到” —— 重启后会再试发。
                 "pending": self._state.outbox.summary(),
+                # 最近几条入站消息被怎么处理的 —— 另一个进程看不到内存里的计数器，
+                # 所以“它为什么不回我”必须有落盘的地方。
+                "decisions": self._state.decisions.recent(),
             }
 
     # ------------------------------------------------------------ 长轮询
@@ -663,8 +699,7 @@ class WeChatGateway:
         if not self._is_allowed(user_id):
             self._refused += 1
             self._remember_refused(user_id)
-            self._note(f"refused {self._refused} message(s) from senders not in "
-                       "WAKU_WECHAT_ALLOW; `waku wechat status` lists them")
+            self._decide(message_id, "refused", "sender is not in WAKU_WECHAT_ALLOW")
             return
 
         # ---- 2. 没有可去重的 ID 就不跑回合。
@@ -672,12 +707,12 @@ class WeChatGateway:
         # 明确不处理（status 报出来），也不要“大概只跑了一次”。
         if not message_id:
             self._no_id += 1
-            self._note(f"refused {self._no_id} message(s) with no message_id: "
-                       "they cannot be deduplicated, so a turn could run twice")
+            self._decide(message_id, "refused",
+                         "no message_id: it cannot be deduplicated, so a turn could run twice")
             return
 
         if self._state.seen.is_known(message_id):
-            self._note(f"duplicate {message_id} ignored")
+            self._decide(message_id, "duplicate", "this id was already handled")
             return
 
         kind = detect_kind(raw.get("item_list"))
@@ -686,7 +721,8 @@ class WeChatGateway:
         if not context_token:
             # 没有 context_token 就发不出去，也没有会话可归属。不认领它 ——
             # 认领等于假装处理过，而重投时它还能再试一次。
-            self._note(f"message {message_id} has no context token; skipped")
+            self._decide(message_id, "refused", "the message carries no context_token, "
+                                               "so there is nowhere to reply")
             return
 
         self._state.seen.claim(message_id)              # ← 认领在跑回合之前
@@ -695,20 +731,21 @@ class WeChatGateway:
             if kind != "text":
                 # 非文本/空消息由 channel 自己回一句，不进 Agent 回合。
                 reply = NON_TEXT_REPLY if kind != "empty" else EMPTY_TEXT_REPLY
-                self._note(f"{kind} message {message_id} — answered without a turn")
+                self._decide(message_id, "handled", f"{kind} message, answered without a turn")
             else:
                 session_id = f"{self.name}-{user_id}"   # 稳定的微信会话 id
                 result = host.ask(text, source=self.name, session_id=session_id)
                 # 只有整轮结束后的最终回复才发出去。中间任何流式片段都不发。
                 reply = result.reply or ""
                 self._handled += 1
+                self._decide(message_id, "handled", f"ran a turn ({len(reply)} chars back)")
         except (HostBusy, HostStopped):
             self._state.seen.unclaim(message_id)
             raise
         except Exception as exc:
             # 回合可能跑了一半。认领保留 —— 重试会重复执行有副作用的工具。
             self._failed += 1
-            self._last_error = f"message {message_id}: {type(exc).__name__}: {exc}"
+            self._decide(message_id, "failed", f"the turn raised: {type(exc).__name__}: {exc}")
             return
 
         # 回合跑完了。回复先进 outbox，**然后**才把这条消息记为已处理：
@@ -716,7 +753,7 @@ class WeChatGateway:
         if reply:
             self._state.outbox.enqueue(message_id, user_id, context_token, reply)
         else:
-            self._note(f"turn for {message_id} produced no text; nothing queued")
+            self._decide(message_id, "handled", "the turn produced no text; nothing queued")
         self._state.seen.complete(message_id)
 
     def flush_outbox(self, base_url: str, token: str) -> None:
@@ -786,6 +823,19 @@ class WeChatGateway:
         if user_id and user_id not in self._refused_senders:
             self._refused_senders.append(user_id)
             del self._refused_senders[:-5]        # 只留最近 5 个，够加白名单用了
+
+    def _decide(self, message_id: str, outcome: str, reason: str) -> None:
+        """记下（并第一眼就说一声）这条消息被怎么处理了。
+
+        **静默拒绝是最难查的一类 bug**：消息被取走了、没有回复、什么也不说。
+        落盘是为了让另一个进程的 `waku wechat status` 能回答“它为什么不回我”，
+        第一眼就 announce 是为了当场就能看到。同一种结果只报一次，不刷屏。
+        """
+        self._state.decisions.record(outcome, message_id, reason)
+        key = f"{outcome}:{reason}"
+        if key not in self._announced_decisions:
+            self._announced_decisions.add(key)
+            self._announce(f"{outcome} — {reason}")
 
     def _announce(self, message: str) -> None:
         """说一句给用户听。**不带凭据、不带正文。** 用户需要知道它掉线了，
@@ -954,6 +1004,14 @@ def cmd_status() -> int:
                   f"{entry['attempts']} attempt(s)")
             if entry["lastError"]:
                 print(f"                last error: {entry['lastError']}")
+    # “它为什么不回我” 得有个能查的地方。计数器在另一个进程的内存里，所以这里读的是
+    # 网关落盘的处理决定。
+    decisions = state.decisions.recent()
+    if decisions:
+        print("recent      : what happened to the last inbound messages")
+        for entry in decisions[-5:]:
+            print(f"              {entry['at'][11:19]}  {entry['messageId']:>20}  "
+                  f"{entry['outcome']:9} {entry['reason']}")
     return 0
 
 
