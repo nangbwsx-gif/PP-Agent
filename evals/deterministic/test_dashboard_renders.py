@@ -113,15 +113,23 @@ FIXTURE = {
 
 
 @pytest.mark.skipif(NODE is None, reason="node not installed")
-def test_every_dashboard_view_renders(tmp_path):
+@pytest.mark.parametrize("lang", ["en", "zh"])
+def test_every_dashboard_view_renders(tmp_path, lang):
+    """Both languages, because they are not one code path.
+
+    Chinese goes through the overlay in i18n.js; English is the original path
+    with the layer switched off entirely. A view that only breaks in one of them
+    is a blank page in someone's browser, so rendering a single language proves
+    half of what this file exists to prove.
+    """
     data = tmp_path / "api_data.json"
     data.write_text(json.dumps(FIXTURE, ensure_ascii=False), encoding="utf-8")
     result = subprocess.run(  # noqa: S603 — fixed argv, paths from this file
-        [NODE, str(SCRIPT), str(data)],
+        [NODE, str(SCRIPT), str(data), lang],
         capture_output=True, text=True, timeout=120, check=False,
     )
     assert result.returncode == 0, (
-        "a dashboard view throws while rendering — that page would be blank in "
-        "the browser, with the server reporting nothing wrong.\n"
+        f"a dashboard view throws while rendering in '{lang}' — that page would "
+        "be blank in the browser, with the server reporting nothing wrong.\n"
         f"{result.stdout}\n{result.stderr}"
     )

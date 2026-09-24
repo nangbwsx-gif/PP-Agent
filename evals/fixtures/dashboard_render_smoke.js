@@ -48,7 +48,9 @@ globalThis.SESSION = DATA.current_session || "default";
 globalThis.editing = false;
 globalThis.activeView = null;
 globalThis.animating = false;
-globalThis.WAKU_LANG = "zh";
+// 语言从命令行来（默认 zh）。英文模式跑一遍是必要的：那是**默认**路径，
+// 语言层在英文下完全不介入 —— 所以英文渲染挂掉 = 我改坏了原版的地方。
+globalThis.WAKU_LANG = process.argv[3] || "zh";
 
 // i18n.js is written for a browser and reads both of these.
 globalThis.window = globalThis;
@@ -135,9 +137,11 @@ for (const [name, render] of CALLS) {
 console.log(lines.join("\n"));
 
 // The Chinese interface is the reason this file exists — prove the language
-// layer really engaged rather than silently falling back to English.
+// layer really engaged rather than silently falling back to English. Only in
+// Chinese mode: run with `en` and the same view rendering roman text is the
+// correct outcome, so asserting it here would be asserting the bug.
 const sample = VIEWS.tools(DATA, "available");
-if (!/[\u4e00-\u9fff]/.test(sample)) {
+if (globalThis.WAKU_LANG === "zh" && !/[\u4e00-\u9fff]/.test(sample)) {
   console.log("\nFAIL  tools/available rendered no Chinese — is the dictionary loaded?");
   failed++;
 }
@@ -158,16 +162,20 @@ if (!/class="connstatus connected"/.test(connHtml)) {
 // stubbed here, so the card's two extra actions render as nothing and cannot be
 // asserted; this can, and it is the part fed by live data.
 //
-// Both languages on purpose: this harness sets WAKU_LANG=zh (the Chinese overlay
-// is why it exists), so the rendered text is Chinese — but asserting only on the
-// Chinese would turn a future language switch into a failing test for no reason.
+// Plain substring, not a regex: `\(\)` in a regex is a GROUP, not an escape, so
+// new RegExp("reply(ies) ...") silently matches the wrong text. That bug shipped
+// in the Chinese-only version of this check and was only caught once this file
+// started rendering English too — which is the reason it now does.
+//
+// Both languages, because the string is translated: English is the fallback the
+// code passes in, Chinese comes from the overlay.
 const WECHAT_DETAILS = [
-  ["reply\(ies\) not delivered yet", "条回复尚未送达"],
+  ["reply(ies) not delivered yet", "条回复尚未送达"],
   ["interrupted message", "条消息被中断"],
   ["refused sender", "个发送者被拒绝"],
 ];
 for (const [english, chinese] of WECHAT_DETAILS) {
-  if (!new RegExp(english).test(connHtml) && !connHtml.includes(chinese)) {
+  if (!connHtml.includes(english) && !connHtml.includes(chinese)) {
     console.log(`\nFAIL  the WeChat card lost its "${english}" detail`
               + " — wechatCardDetail() returned nothing for data that has it");
     failed++;

@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import threading
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -395,3 +398,156 @@ def test_the_wechat_routes_are_guarded_to_local_clients():
     assert handler._is_local() is True
     handler.client_address = ("192.168.1.50", 12345)
     assert handler._is_local() is False
+
+
+# ------------------------------------------- the field failure: re-binding after
+# a session expires. Everything above this line walks the happy path INTO the
+# expired state; nothing walked the way back out, and that is the path a real
+# user has no alternative to.
+
+
+class FakePollILink(FakeILink):
+    """The login calls plus a scripted long poll, so one object serves both halves
+    of a re-bind. A `batches` entry that is an exception is raised instead."""
+
+    def __init__(self, *, batches=None, statuses=None):
+        super().__init__(statuses=statuses)
+        self.batches = list(batches or [])
+        self.polls = 0
+
+    def fetch_updates(self, base_url, token, cursor):
+        self.polls += 1
+        item = (
+            self.batches.pop(0) if self.batches
+            else {"msgs": [], "get_updates_buf": cursor, "ret": 0}
+        )
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+def _wait_until(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+@pytest.fixture
+def real_host(monkeypatch, _isolated):
+    """A real Host, for the two tests the stub cannot answer.
+
+    The stub records `set_gateway` without starting anything, so it can tell
+    neither "replaced and polling" apart from "replaced and doing nothing", nor
+    leak a poll thread. Both questions below are about a live gateway, so both
+    need the real thing. iLink is still faked, so nothing here reaches the net.
+    """
+    from waku.runtime import host as host_module
+    from waku.runtime.host import Host
+
+    agent = SimpleNamespace(tracer=SimpleNamespace(event=lambda *a, **k: None))
+    host = Host(build=lambda: agent)
+    monkeypatch.setattr(host_module, "shared_host", lambda: host)
+    host.start()
+    yield host
+    host.stop()
+
+
+def test_an_expired_session_is_recoverable_by_scanning_again(monkeypatch, real_host):
+    """The likeliest thing to happen in the field, and the one that strands the
+    user for good if it is broken.
+
+    A WeChat session expires (errcode -14): the poll thread returns, the card goes
+    red, and the only thing the user can do is press Scan. Walking that path shows
+    the gateway that comes back is a REPLACEMENT — the old object's thread has
+    already returned, so `set_gateway` stops and reinstalls rather than resuming —
+    and the replacement then has to pick the fresh token up off disk.
+
+    The real Host is used on purpose. The stub records `set_gateway` without
+    starting anything, so it cannot tell "replaced and polling" from "replaced and
+    doing nothing", which is the entire question.
+    """
+    monkeypatch.setenv("WAKU_WECHAT", "1")
+    monkeypatch.setenv("WAKU_WECHAT_ALLOW", USER)
+
+    # Already bound: this is a re-bind, not a first login, so there are no
+    # credentials to obtain and no QR to show.
+    wechat.GatewayState(wechat.state_directory()).save_credentials(
+        {"token": TOKEN, "baseUrl": wechat.BASE_URL, "accountId": "bot@im.bot",
+         "userId": USER}
+    )
+
+    # 1. the bound session is dead on arrival
+    _use_fake(monkeypatch, FakePollILink(batches=[
+        wechat.ApiError("session timeout", status=401, code=wechat.SESSION_EXPIRED_CODE)
+    ]))
+
+    first = dashboard.apply_wechat_gateway()
+    assert first is not None, "the gateway did not start from environment"
+    assert _wait_until(lambda: first.status()["phase"] == "expired"), first.status()
+    assert not first.running, "the poll thread should have returned, not kept going"
+    expired_status = dashboard.wechat_phase_status(first.status())
+    assert expired_status.state is IntegrationState.ERROR, "an expired session is not 'connected'"
+    assert "expired" in expired_status.message
+
+    # 2. the user presses Scan and confirms on the phone
+    _use_fake(monkeypatch, FakePollILink(statuses=[_confirmed_status()]))
+    _stub_qr(monkeypatch)
+    dashboard.wechat_login({})
+    assert dashboard.wechat_login_status({})["status"] == "confirmed"
+
+    # 3. a replacement is polling, with the token that just landed
+    second = dashboard._wechat
+    assert second is not first, "the expired gateway was reused; its poll thread has returned"
+    assert _wait_until(lambda: second.status()["phase"] == "polling"), second.status()
+    assert second.running, "the replacement never started its long poll"
+    assert dashboard.wechat_phase_status(second.status()).state is IntegrationState.CONNECTED
+    saved = wechat.GatewayState(wechat.state_directory()).credentials()
+    assert saved and saved["token"] == TOKEN
+
+    second.stop()
+
+
+def _poll_threads():
+    """The gateway names its poll thread, which is what makes a leak countable."""
+    return [t for t in threading.enumerate() if t.name == "waku-wechat"]
+
+
+def test_saving_the_card_repeatedly_does_not_leak_poll_threads(monkeypatch, real_host):
+    """The failure that only shows up after an afternoon of use.
+
+    Every save installs a NEW gateway, and every gateway starts a poll thread. If
+    the replaced one is not actually joined, an evening of toggling the switch
+    leaves a stack of threads all long-polling the same bot — each one racing to
+    claim the same messages, each one holding its own connection. Nothing about a
+    single save looks wrong.
+    """
+    monkeypatch.setenv("WAKU_WECHAT", "1")
+    monkeypatch.setenv("WAKU_WECHAT_ALLOW", USER)
+    wechat.GatewayState(wechat.state_directory()).save_credentials(
+        {"token": TOKEN, "baseUrl": wechat.BASE_URL, "accountId": "bot@im.bot",
+         "userId": USER}
+    )
+    _use_fake(monkeypatch, FakePollILink())
+
+    baseline = len(_poll_threads())
+    installed = []
+    for _ in range(5):
+        gateway = dashboard.apply_wechat_gateway()
+        assert gateway is not None
+        installed.append(gateway)
+
+    # Exactly one, not "at most one": if the thread name ever stops matching,
+    # zero would also satisfy a `<=` and this test would pass while checking
+    # nothing at all.
+    assert _wait_until(lambda: len(_poll_threads()) - baseline == 1), (
+        f"{len(_poll_threads()) - baseline} poll threads are alive after 5 saves "
+        "(want exactly 1): the replaced gateways were not joined"
+    )
+    assert len({id(g) for g in installed}) == 5, "a save reused the same gateway object"
+
+    installed[-1].stop()
+    dashboard._wechat = None
+    assert _wait_until(lambda: not _poll_threads()), "the last one did not stop either"
