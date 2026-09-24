@@ -51,7 +51,7 @@ through the gateway on 2026-09-24, and every path in `waku/gateway/wechat.py` an
 `waku/ops/dashboard.py` is covered offline by `evals/deterministic/`. Nobody has
 scanned the dashboard's own QR yet. Treat that page as working-but-unproven.
 
-**798 deterministic evals pass offline**, with no API key; 38 more skip without
+**809 deterministic evals pass offline**, with no API key; 38 more skip without
 one. On Windows 2 of them fail (temp-file and process assumptions, not this
 checkout — the third used to fail too, and turned out to be the eval suite writing
 to the developer's own `.env`, now fixed in `evals/conftest.py`) and 2 more need

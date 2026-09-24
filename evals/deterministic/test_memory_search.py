@@ -31,7 +31,7 @@ import pytest
 
 from waku.db import connect
 from waku.memory.episodic.store import SqliteEpisodeStore
-from waku.memory.semantic.store import SqliteFactStore, _fts_query
+from waku.memory.semantic.store import SqliteFactStore, _cjk_grams, _fts_query
 
 
 @pytest.fixture
@@ -136,3 +136,78 @@ def test_underscore_is_a_separator_here_because_it_is_one_in_the_index():
     """unicode61 splits on `_`, so `waku_agent` is two terms in the index and
     has to be two terms here too, or it matches nothing."""
     assert _fts_query("waku_agent") == "waku OR agent"
+
+
+# ---------- the 2026-09-24 bug: a CJK word could only be found if it STARTED
+# the run. The prefix wildcard above rescues 「阿历克斯喜欢游泳」 for the name
+# 阿历克斯 and for nothing else — so the test above passed while every
+# realistic question still failed.
+
+
+def test_a_cjk_word_in_the_middle_of_a_run_finds_its_fact(facts):
+    """Observed live, not invented: a real state.db held this exact fact and
+    `search("计算机")` returned [], so the assistant told its own user it had
+    never been told their major — while the fact sat in the table.
+
+    「用户是一名计算机技术专业的学生」 is ONE term in the index. `计算机*` is a
+    prefix of nothing, so no amount of MATCH reaches it.
+    """
+    facts.add("user", "用户是一名计算机技术专业的学生")
+    assert facts.search("计算机"), "a word inside a CJK run must be findable"
+    assert facts.search("专业"), "and so must the last word in it"
+    assert facts.search("学生")
+
+
+def test_a_cjk_word_in_the_middle_of_an_episode_finds_it(episodes):
+    episodes.add("用户确认了我记住他住在杭州且习惯晚上工作", "2026-09-19")
+    assert episodes.search("杭州")
+    assert episodes.search("工作")
+
+
+def test_a_prefix_hit_does_not_hide_a_middle_hit(facts):
+    """MATCH is not merely incomplete on CJK, it is limited in a way that makes
+    a hit meaningless as a completeness proof. A fallback that only runs when
+    MATCH returns nothing therefore still loses rows — which is why the second
+    net always runs for these scripts."""
+    facts.add("a", "专业英语考试")        # starts the run, so `专业*` MATCHes it
+    facts.add("b", "计算机技术专业")       # mid-run: MATCH can never reach it
+    found = facts.search("专业", top_k=4)
+    assert len(found) == 2, f"the prefix hit hid the mid-run one: {found}"
+
+
+def test_a_cjk_query_that_matches_nothing_is_still_empty(facts):
+    """The fallback must not become a licence to return the whole table."""
+    facts.add("user", "用户是一名计算机技术专业的学生")
+    assert facts.search("量子力学") == []
+
+
+def test_an_unmatched_cjk_query_does_not_fall_back_to_recent_episodes(episodes):
+    """The worst failure in this file, one script over: a question the store
+    cannot answer must stay unanswered."""
+    episodes.add("Planned the Acme demo with Alex", "2026-08-02")
+    assert episodes.search("量子力学") == []
+
+
+def test_an_english_query_does_not_pay_for_the_cjk_net(facts):
+    """Grams only exist for unsegmented scripts, so a Latin query takes the FTS
+    path alone: same rows, same order, as before the second net existed."""
+    facts.add("müller", "Müller prefers meetings in München")
+    facts.add("user", "用户是一名计算机技术专业的学生")
+    assert facts.search("München") == ["[müller] Müller prefers meetings in München"]
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [
+        ("计算机", {"计算", "算机"}),
+        ("书", {"书"}),                      # one character is its own gram
+        ("微信 聊过什么", {"微信", "聊过", "过什", "什么"}),
+        ("League of Legends", set()),        # Latin has word boundaries already
+        ("", set()),
+    ],
+)
+def test_grams_are_pairs_with_a_lone_character_kept(query, expected):
+    """Two-gram, not word segmentation: any query of two or more characters
+    shares at least one gram with the text it came from, with no dictionary and
+    no dependency."""
+    assert _cjk_grams(query) == expected
