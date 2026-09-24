@@ -27,6 +27,11 @@ From the exchanges below, extract:
    only things worth remembering in a month; skip chit-chat and one-offs.
 2. one single-sentence episode summarizing what happened in this conversation.
 
+Write every fact and the episode in the language the user wrote in: a Chinese
+conversation becomes Chinese memory. This is not a style preference. Memory is
+retrieved by keyword, so a fact stored in a language the question is not asked
+in can never be found again — the user's own history becomes invisible to them.
+
 Reply with ONLY this JSON:
 {{"facts": [{{"subject": "<who/what>", "content": "<one sentence>"}}], "episode": "<one sentence>"}}
 

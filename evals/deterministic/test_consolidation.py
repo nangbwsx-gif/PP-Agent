@@ -295,3 +295,25 @@ def test_the_prompt_carries_the_log_and_demands_json_only():
     assert "worth remembering in a month" in filled, (
         "the durability instruction is what keeps chit-chat out of long-term memory"
     )
+
+
+def test_the_prompt_makes_memory_come_out_in_the_users_language():
+    """Found live on 2026-09-24: a Chinese conversation about League of Legends
+    was distilled into the ENGLISH fact "User plays League of Legends...". The
+    retrieval gate then asked about 「英雄联盟」, which cannot reach an English
+    row — so the user's own history was invisible to them, in their own language,
+    in the store that exists to hold it.
+
+    A prompt line is not a behaviour, so this is only half the guard: the other
+    half is that the store is searched as substring PLUS fuzzy in whatever
+    language it was written in. But this line is what stops the summarizer from
+    translating, and deleting it silently restores the bug.
+    """
+    filled = SUMMARIZER_PROMPT.format(log="user: 我关注英雄联盟\nassistant: 好的")
+    assert "language the user wrote in" in filled, (
+        "without this the summarizer translates, and translated memory is unsearchable"
+    )
+    assert "keyword" in filled, (
+        "the reason has to be in the prompt: a model told to translate for tidiness "
+        "will do it again"
+    )
