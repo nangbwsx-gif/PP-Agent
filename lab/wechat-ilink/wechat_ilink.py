@@ -81,6 +81,12 @@ SESSION_EXPIRED_CODE = -14
 RETRY_BASE_SECONDS = 1.0
 RETRY_MAX_SECONDS = 10.0
 
+# getupdates 本该把这次调用挂住（实测约 18s）。但它有时会立刻返回，而立即重试
+# 会把账号打进限流 —— 2026-09-23 有个 lab 进程就这样空转了 16 小时，发了约 70 万
+# 次请求（12 req/s），那段时间微信那边看起来就是“bot 不回话”。所以给每轮之间
+# 加一个下限。
+MIN_POLL_INTERVAL_SECONDS = 2.0
+
 
 class ApiError(Exception):
     """A failed call, carrying enough of the response to act on it."""
@@ -392,6 +398,7 @@ def cmd_poll(args) -> int:
 
     while args.rounds == 0 or rounds < args.rounds:
         rounds += 1
+        started = time.monotonic()
         try:
             response = fetch_updates(base_url, token, cursor)
         except ApiError as exc:
@@ -449,6 +456,11 @@ def cmd_poll(args) -> int:
 
         if not response.get("msgs"):
             _log(f"no messages (cursor now {cursor[:24]!r})")
+
+        # 拿不到长轮询的挂起时间时，自己保证最小间隔（原因见 MIN_POLL_INTERVAL_SECONDS）。
+        elapsed = time.monotonic() - started
+        if elapsed < MIN_POLL_INTERVAL_SECONDS:
+            time.sleep(MIN_POLL_INTERVAL_SECONDS - elapsed)
 
     return 0
 

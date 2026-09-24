@@ -84,6 +84,13 @@ These came out of running it, not out of reading pi-wechat.
   run below.
 - **`getupdates` also holds the connection.** With no traffic it returned after
   about 18s each time, well under the 35s the protocol reference mentions.
+- **But it does not always hold.** On 2026-09-24 the same call started returning
+  immediately with an empty batch and an unchanged cursor, and a poll loop that
+  trusted the hold spun at 12 requests per second: one process left running
+  overnight sent roughly 700,000 requests in 16 hours. The account looked dead
+  from the phone — messages arrived but nothing picked them up — while the
+  server was in fact still answering. `wechat_ilink.py` now enforces a minimum
+  interval between polls instead of trusting the server to pace the loop.
 - **The cursor is the whole restart story.** `get_updates_buf` is opaque, and it
   carries the bot identity inside it (base64-decoded, it contains
   `<bot_id>:0600...`). Persisting it is what makes a restart resume rather than
